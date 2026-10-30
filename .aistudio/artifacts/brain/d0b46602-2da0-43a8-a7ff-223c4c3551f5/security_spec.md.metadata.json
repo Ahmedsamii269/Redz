@@ -1,0 +1,6 @@
+{
+  "summary":  "Security specification for Firestore rules, defining data invariants and test payloads.",
+  "updatedAt":  "2026-10-28T21:28:00.420634185Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

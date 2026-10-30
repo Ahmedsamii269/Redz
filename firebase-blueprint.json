@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "User": {
+      "title": "Recruiter/Staff User",
+      "description": "System users including admins, managers, and recruiters.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "fullName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "account_manager", "unit_manager", "team_leader", "recruiter"] },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "referralCode": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "teamLeaderId": { "type": "string" },
+        "unitManagerId": { "type": "string" }
+      },
+      "required": ["username", "fullName", "role", "email", "referralCode"]
+    },
+    "CompanyOffer": {
+      "title": "Job Offer",
+      "description": "Job vacancies with company details and interview slots.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "companyName": { "type": "string" },
+        "location": { "type": "string" },
+        "salaryPackage": { "type": "string" },
+        "workingHours": { "type": "string" },
+        "requirements": { "type": "array", "items": { "type": "string" } },
+        "interviewSlots": { "type": "array" },
+        "isAvailable": { "type": "boolean" },
+        "schedulingRules": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "companyName", "isAvailable"]
+    },
+    "CandidateApplication": {
+      "title": "Job Application",
+      "description": "Candidate submission for a specific job offer.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "referenceCode": { "type": "string" },
+        "fullName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "companyId": { "type": "string" },
+        "companyName": { "type": "string" },
+        "offerId": { "type": "string" },
+        "offerTitle": { "type": "string" },
+        "vocarooUrl": { "type": "string" },
+        "vocarooUrl2": { "type": "string" },
+        "recruiterId": { "type": "string" },
+        "recruiterName": { "type": "string" },
+        "recruiterCode": { "type": "string" },
+        "status": { "type": "string" },
+        "scheduledDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fullName", "phone", "companyId", "recruiterId", "status"]
+    },
+    "StatusConfig": {
+      "title": "Application Status",
+      "description": "Configurable status labels and colors.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "key": { "type": "string" },
+        "labelAr": { "type": "string" },
+        "labelEn": { "type": "string" },
+        "color": { "type": "string" },
+        "category": { "type": "string" }
+      },
+      "required": ["key", "labelAr"]
+    },
+    "SystemNotification": {
+      "title": "System Notification",
+      "description": "Real-time alerts for the management team.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "candidateId": { "type": "string" },
+        "type": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message", "candidateId", "type", "read"]
+    }
+  },
+  "firestore": {
+    "/recruiters/{userId}": {
+      "schema": "User",
+      "description": "Users collection using username as ID."
+    },
+    "/offers/{offerId}": {
+      "schema": "CompanyOffer",
+      "description": "Available job offers."
+    },
+    "/applications/{appId}": {
+      "schema": "CandidateApplication",
+      "description": "Submitted candidate applications."
+    },
+    "/statuses/{statusId}": {
+      "schema": "StatusConfig",
+      "description": "Global status configurations."
+    },
+    "/notifications/{notifId}": {
+      "schema": "SystemNotification",
+      "description": "Internal notifications."
+    }
+  }
+}
