@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { User, SystemNotification, CandidateApplication, CompanyOffer } from '../types';
 import { Users, LogOut, ChevronDown, Check, Sparkles, Building2, LayoutDashboard, Share2, PlusCircle, Bell, MessageSquare, Coins, Trophy } from 'lucide-react';
 import { RedzLogo } from './RedzLogo';
-import { AIChatModal } from './AIChatModal';
+import { CloudSyncIndicator } from './CloudSyncIndicator';
+import { ThemeToggle } from './ThemeToggle';
 import { formatWhatsAppCandidateMessage, getStoredWhatsAppConfig, openWhatsAppDirect } from '../lib/whatsapp';
 
 interface NavbarProps {
@@ -32,7 +33,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
-  const [isAIChatOpen, setIsAIChatOpen] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
   const isAdmin = currentUser?.role === 'admin';
@@ -60,7 +60,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-white border-b border-slate-200">
+    <header className="sticky top-0 z-40 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
         {/* Zone 1: Brand Wordmark (Single text element / RedzLogo) */}
         <div className="flex items-center gap-3 shrink-0">
@@ -74,7 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Zone 2: Navigation Links (single-line text with subtle active state) */}
-        <nav className="hidden md:flex items-center gap-5 text-xs font-semibold text-slate-600 whitespace-nowrap">
+        <nav className="hidden md:flex items-center gap-5 text-xs font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">
           {isAdmin ? (
             <>
               <button
@@ -179,14 +179,29 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Zone 3: Primary Action & Profile Switcher */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* Cloud Firestore Sync Status Indicator */}
+          <CloudSyncIndicator />
+          
+          <div className="hidden sm:block">
+            <ThemeToggle />
+          </div>
+
           {/* Real-time System Notifications Bell */}
           <div className="relative">
             <button
               onClick={() => {
-                setShowNotifDropdown(!showNotifDropdown);
+                const willOpen = !showNotifDropdown;
+                setShowNotifDropdown(willOpen);
                 setShowUserDropdown(false);
+                if (willOpen && unreadCount > 0 && onMarkNotificationRead) {
+                  notifications.forEach((n) => {
+                    if (!n.read) {
+                      onMarkNotificationRead(n.id);
+                    }
+                  });
+                }
               }}
-              className="relative p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+              className="relative p-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
               title="System Notifications"
             >
               <Bell className="w-5 h-5" />
@@ -200,7 +215,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Notifications Dropdown Panel */}
             {showNotifDropdown && (
               <div
-                className="absolute right-0 sm:right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-100 text-left"
+                className="absolute right-0 sm:right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 py-2 z-50 animate-in fade-in zoom-in-95 duration-100 text-left"
               >
                 <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
                   <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
@@ -263,15 +278,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>{copiedUrl ? 'Link Copied!' : 'Copy Website'}</span>
           </button>
 
-          {/* AI Assistant Button */}
-          <button
-            onClick={() => setIsAIChatOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-red-500/20 animate-pulse"
-            title="Ask REDZ AI Assistant"
-          >
-            <Sparkles className="w-3.5 h-3.5 fill-white/20" />
-            <span className="hidden sm:inline">AI Assistant</span>
-          </button>
 
           {/* Quick User Switcher Menu */}
           <div className="relative">
@@ -280,9 +286,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 setShowUserDropdown(!showUserDropdown);
                 setShowNotifDropdown(false);
               }}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-left"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left"
             >
-              <div className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[11px] font-bold text-slate-700">
+              <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-[11px] font-bold text-slate-700 dark:text-slate-300">
                 {currentUser ? currentUser.fullName.charAt(0) : '?'}
               </div>
               <div className="hidden sm:block text-left">
@@ -329,63 +335,112 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      <AIChatModal 
-        isOpen={isAIChatOpen} 
-        onClose={() => setIsAIChatOpen(false)} 
-        offers={offers}
-        userName={currentUser?.fullName}
-      />
 
       {/* Mobile nav subbar */}
-      <div className="md:hidden flex items-center justify-around border-t border-slate-200 py-2 px-3 bg-slate-50 text-[11px] font-bold text-slate-600">
+      <div className="md:hidden flex items-center overflow-x-auto no-scrollbar gap-1.5 border-t border-slate-200 dark:border-slate-800 py-2 px-3 bg-slate-50 dark:bg-slate-950 text-[11px] font-bold text-slate-600 dark:text-slate-400">
         {isAdmin ? (
           <>
             <button
               onClick={() => onSelectTab('dashboard')}
-              className={currentTab === 'dashboard' ? 'text-red-600' : ''}
+              className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 ${
+                currentTab === 'dashboard'
+                  ? 'bg-red-600 text-white font-bold shadow-2xs'
+                  : 'hover:text-slate-900 dark:hover:text-white'
+              }`}
             >
-              Candidates
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              <span>المرشحين</span>
             </button>
             <button
               onClick={() => onSelectTab('offers')}
-              className={currentTab === 'offers' ? 'text-red-600' : ''}
+              className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 ${
+                currentTab === 'offers'
+                  ? 'bg-red-600 text-white font-bold shadow-2xs'
+                  : 'hover:text-slate-900 dark:hover:text-white'
+              }`}
             >
-              Offers
+              <Building2 className="w-3.5 h-3.5" />
+              <span>الوظائف</span>
+            </button>
+            <button
+              onClick={() => onSelectTab('leaderboard')}
+              className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 ${
+                currentTab === 'leaderboard'
+                  ? 'bg-red-600 text-white font-bold shadow-2xs'
+                  : 'hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Trophy className="w-3.5 h-3.5 text-amber-500" />
+              <span>المتصدرين</span>
             </button>
             <button
               onClick={() => onSelectTab('commissions')}
-              className={currentTab === 'commissions' ? 'text-red-600 font-bold' : ''}
+              className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 ${
+                currentTab === 'commissions'
+                  ? 'bg-red-600 text-white font-bold shadow-2xs'
+                  : 'hover:text-slate-900 dark:hover:text-white'
+              }`}
             >
-              Commissions
+              <Coins className="w-3.5 h-3.5 text-amber-600" />
+              <span>العمولات</span>
             </button>
           </>
         ) : (
           <>
             <button
               onClick={() => onSelectTab('my_candidates')}
-              className={currentTab === 'my_candidates' ? 'text-red-600' : ''}
+              className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 ${
+                currentTab === 'my_candidates'
+                  ? 'bg-red-600 text-white font-bold shadow-2xs'
+                  : 'hover:text-slate-900 dark:hover:text-white'
+              }`}
             >
-              Candidates
+              <Users className="w-3.5 h-3.5" />
+              <span>مرشحيني</span>
             </button>
             <button
               onClick={() => onSelectTab('recruiter_offers')}
-              className={currentTab === 'recruiter_offers' ? 'text-red-600' : ''}
+              className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 ${
+                currentTab === 'recruiter_offers'
+                  ? 'bg-red-600 text-white font-bold shadow-2xs'
+                  : 'hover:text-slate-900 dark:hover:text-white'
+              }`}
             >
-              Offers
+              <Building2 className="w-3.5 h-3.5" />
+              <span>الوظائف</span>
+            </button>
+            <button
+              onClick={() => onSelectTab('leaderboard')}
+              className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 ${
+                currentTab === 'leaderboard'
+                  ? 'bg-red-600 text-white font-bold shadow-2xs'
+                  : 'hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Trophy className="w-3.5 h-3.5 text-amber-500" />
+              <span>المتصدرين</span>
             </button>
             <button
               onClick={() => onSelectTab('commissions')}
-              className={currentTab === 'commissions' ? 'text-red-600 font-bold' : ''}
+              className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 ${
+                currentTab === 'commissions'
+                  ? 'bg-red-600 text-white font-bold shadow-2xs'
+                  : 'hover:text-slate-900 dark:hover:text-white'
+              }`}
             >
-              Commissions
+              <Coins className="w-3.5 h-3.5 text-amber-600" />
+              <span>العمولات</span>
             </button>
           </>
         )}
         <button
           onClick={onOpenCandidateForm}
-          className={currentTab === 'candidate_portal' ? 'text-red-600' : ''}
+          className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-bold shrink-0 ${
+            currentTab === 'candidate_portal' ? 'bg-red-600 text-white' : ''
+          }`}
         >
-          Apply Form
+          <PlusCircle className="w-3.5 h-3.5" />
+          <span>فورم التقديم</span>
         </button>
       </div>
     </header>

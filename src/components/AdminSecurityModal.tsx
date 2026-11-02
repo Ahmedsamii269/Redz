@@ -20,8 +20,6 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
   strictAuthMode,
   onToggleStrictAuth,
 }) => {
-  if (!isOpen) return null;
-
   const initialConfig = getStoredWhatsAppConfig();
 
   const [username, setUsername] = useState(currentUser?.username || 'Ahmedsamii');
@@ -33,6 +31,8 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

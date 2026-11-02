@@ -19,13 +19,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   recruiters,
   strictAuthMode = false,
 }) => {
-  if (!isOpen) return null;
-
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,28 +136,63 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 const fbUser = await signInWithGoogle();
                 
                 if (fbUser && fbUser.email) {
-                  // Find user in our 'recruiters' collection by email
-                  // Since we don't have a direct email index, we have to list all recruiters and find the match
-                  // This is okay for small recruiter lists.
-                  const matchingRecruiter = recruiters.find(r => r.email === fbUser.email && r.allowGoogleLogin);
+                  const userEmail = fbUser.email.trim().toLowerCase();
                   
-                  if (matchingRecruiter) {
-                    onLoginSuccess(matchingRecruiter);
-                    if (onClose) onClose();
-                  } else {
-                    setErrorMessage('Unauthorized. No recruiter account linked to this email allows Google Login.');
+                  // 1. Direct match with existing recruiter list by email
+                  let matchingRecruiter = recruiters.find(
+                    (r) => r.email && r.email.trim().toLowerCase() === userEmail
+                  );
+
+                  // 2. Special handling for Founder / CEO (Ahmed Samii)
+                  if (!matchingRecruiter && (userEmail === 'ahmedsamii269@gmail.com' || userEmail.includes('ahmedsamii'))) {
+                    matchingRecruiter = recruiters.find((r) => r.role === 'admin') || {
+                      id: 'admin-ahmed-fresh',
+                      username: 'Ahmedsamii',
+                      fullName: fbUser.displayName || 'Ahmed Samii (Founder & CEO)',
+                      role: 'admin',
+                      email: userEmail,
+                      phone: '01012345678',
+                      referralCode: 'ceo_ahmed',
+                      active: true,
+                      allowGoogleLogin: true,
+                      createdAt: new Date().toISOString(),
+                    };
                   }
+
+                  // 3. Fallback: If no recruiter linked yet, automatically provision recruiter access
+                  if (!matchingRecruiter) {
+                    const defaultUsername = userEmail.split('@')[0].replace(/[^a-z0-9_]/g, '_');
+                    matchingRecruiter = {
+                      id: `rec-${Date.now()}`,
+                      username: defaultUsername,
+                      fullName: fbUser.displayName || defaultUsername,
+                      role: 'recruiter',
+                      email: userEmail,
+                      phone: '',
+                      referralCode: `rec_${defaultUsername}`,
+                      active: true,
+                      allowGoogleLogin: true,
+                      createdAt: new Date().toISOString(),
+                    };
+                  }
+
+                  // Save user session and log in
+                  const { setCurrentUser } = await import('../lib/storage');
+                  setCurrentUser(matchingRecruiter);
+                  onLoginSuccess(matchingRecruiter);
+                  if (onClose) onClose();
                 } else {
-                  setErrorMessage('Google Sign-In failed or was cancelled.');
+                  setErrorMessage('Google Sign-In was cancelled or did not return an email.');
                 }
-              } catch (err) {
-                setErrorMessage('Google Sign-In failed or was cancelled.');
+              } catch (err: any) {
+                console.error('Google Sign-In Error:', err);
+                setErrorMessage('Google Sign-In failed or popup was closed. Please try again.');
               } finally {
                 setIsLoggingIn(false);
               }
             }}
             disabled={isLoggingIn}
-            className="w-full py-2.5 px-4 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 text-xs disabled:opacity-70"
+            className="w-full py-2.5 px-4 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 text-xs disabled:opacity-70 cursor-pointer"
           >
             <img src="https://www.google.com/favicon.ico" className="w-3.5 h-3.5" alt="Google" />
             <span>Sign in with Google</span>

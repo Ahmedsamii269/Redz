@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Copy, Check, Share2, ExternalLink, Building2, Send, QrCode } from 'lucide-react';
 import { CompanyOffer, User } from '../types';
 
@@ -19,13 +19,21 @@ export const ReferralLinkModal: React.FC<ReferralLinkModalProps> = ({
   initialOffer,
   onOpenCandidateView,
 }) => {
-  if (!isOpen) return null;
-
   const [selectedOfferId, setSelectedOfferId] = useState<string>(
     initialOffer?.id || (offers.length > 0 ? offers[0].id : '')
   );
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
+
+  useEffect(() => {
+    if (initialOffer?.id) {
+      setSelectedOfferId(initialOffer.id);
+    } else if (offers.length > 0 && !selectedOfferId) {
+      setSelectedOfferId(offers[0].id);
+    }
+  }, [initialOffer?.id, offers]);
+
+  if (!isOpen) return null;
 
   const selectedOffer = offers.find((o) => o.id === selectedOfferId) || offers[0];
   const refCode = recruiter?.referralCode || recruiter?.username || 'ceo_ahmed';

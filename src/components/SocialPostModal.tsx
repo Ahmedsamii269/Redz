@@ -37,8 +37,6 @@ export const SocialPostModal: React.FC<SocialPostModalProps> = ({
   allOffers = [],
   onSelectOffer,
 }) => {
-  if (!isOpen || !offer) return null;
-
   const [activeTab, setActiveTab] = useState<'post' | 'details'>('post');
   // Exactly matching the recruiter's configured phone from their user profile
   const [recruiterPhone, setRecruiterPhone] = useState<string>(
@@ -54,6 +52,8 @@ export const SocialPostModal: React.FC<SocialPostModalProps> = ({
       setRecruiterPhone(recruiter.phone);
     }
   }, [recruiter?.phone, recruiter?.id]);
+
+  if (!isOpen || !offer) return null;
 
   // Generate clean Egyptian WhatsApp link
   const cleanPhone = (recruiterPhone || '').replace(/[^0-9]/g, '');

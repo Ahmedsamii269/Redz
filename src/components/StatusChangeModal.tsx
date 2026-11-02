@@ -22,29 +22,38 @@ export const StatusChangeModal: React.FC<StatusChangeModalProps> = ({
   currentUser,
   onSaveStatus,
 }) => {
-  if (!isOpen || !candidate) return null;
-
-  const [selectedStatus, setSelectedStatus] = useState<string>(candidate.status);
-  const [feedbackNote, setFeedbackNote] = useState<string>(candidate.feedbackNotes || '');
-  const [scheduledDate, setScheduledDate] = useState<string>(candidate.scheduledDate || '');
+  const [selectedStatus, setSelectedStatus] = useState<string>(candidate?.status || '');
+  const [feedbackNote, setFeedbackNote] = useState<string>(candidate?.feedbackNotes || '');
+  const [scheduledDate, setScheduledDate] = useState<string>(candidate?.scheduledDate || '');
   
   // Scheduling Helper State
   const [selectedDay, setSelectedDay] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
 
-  const currentOffer = offers.find(o => o.id === candidate.offerId || o.id === candidate.companyId);
+  const currentOffer = offers.find(o => o.id === candidate?.offerId || o.id === candidate?.companyId);
   const rules = currentOffer?.schedulingRules;
 
   // Initialize selected day/time if scheduledDate exists
   useEffect(() => {
-    if (candidate.scheduledDate) {
+    if (candidate?.scheduledDate) {
       const d = new Date(candidate.scheduledDate);
       if (!isNaN(d.getTime())) {
         setSelectedDay(d.toISOString().split('T')[0]);
         setSelectedTime(d.toTimeString().slice(0, 5));
       }
     }
-  }, [candidate.scheduledDate]);
+  }, [candidate?.scheduledDate]);
+
+  // Synchronize state when candidate changes
+  useEffect(() => {
+    if (candidate) {
+      setSelectedStatus(candidate.status);
+      setFeedbackNote(candidate.feedbackNotes || '');
+      setScheduledDate(candidate.scheduledDate || '');
+    }
+  }, [candidate?.id, candidate?.status, candidate?.feedbackNotes, candidate?.scheduledDate]);
+
+  if (!isOpen || !candidate) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

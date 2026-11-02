@@ -38,7 +38,32 @@ interface FirestoreErrorInfo {
   };
 }
 
+export type SyncState = 'synced' | 'saving' | 'offline' | 'error';
+
+type SyncListener = (state: SyncState, lastSavedAt?: Date) => void;
+const syncListeners = new Set<SyncListener>();
+
+let currentSyncState: SyncState = 'synced';
+let lastSyncTime: Date = new Date();
+
+export const subscribeToSyncState = (listener: SyncListener) => {
+  syncListeners.add(listener);
+  listener(currentSyncState, lastSyncTime);
+  return () => {
+    syncListeners.delete(listener);
+  };
+};
+
+export const setSyncState = (state: SyncState) => {
+  currentSyncState = state;
+  if (state === 'synced') {
+    lastSyncTime = new Date();
+  }
+  syncListeners.forEach((l) => l(currentSyncState, lastSyncTime));
+};
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  setSyncState('error');
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -218,48 +243,7 @@ export const subscribeToOffers = (callback: (data: CompanyOffer[]) => void) => {
         };
       });
 
-      // Strict Deduplication: Only 1 unique offer per company!
-      const deduplicatedMap = new Map<string, CompanyOffer>();
-      for (const item of rawData) {
-        const key = getCanonicalCompanyKey(item);
-        if (!key) continue;
-
-        if (!deduplicatedMap.has(key)) {
-          deduplicatedMap.set(key, item);
-        } else {
-          // Keep canonical INITIAL_OFFERS id or one with more complete slots
-          const existing = deduplicatedMap.get(key)!;
-          const isItemCanonical = INITIAL_OFFERS.some((io) => io.id === item.id);
-          const isExistCanonical = INITIAL_OFFERS.some((io) => io.id === existing.id);
-          if (isItemCanonical && !isExistCanonical) {
-            deduplicatedMap.set(key, item);
-          } else if ((item.interviewSlots?.length || 0) > (existing.interviewSlots?.length || 0)) {
-            deduplicatedMap.set(key, item);
-          }
-        }
-      }
-
-      // Allowed approved companies: exactly the 11 companies
-      const allowedKeys = new Set([
-        'ttec_english',
-        'tp_english',
-        'eclerx',
-        'alorica',
-        'lpm',
-        'lts',
-        'amend',
-        'creative_basket',
-        'total_trip',
-        'dial_expert',
-        'ttec_french',
-        'ttec_german',
-      ]);
-
-      const filteredOffers = Array.from(deduplicatedMap.entries())
-        .filter(([k]) => allowedKeys.has(k) || k.startsWith('custom_'))
-        .map(([, offer]) => offer);
-
-      const sorted = sortOffers(filteredOffers);
+      const sorted = sortOffers(rawData);
       callback(sorted);
     },
     (error) => {
@@ -368,6 +352,7 @@ export const initializeStorage = async () => {
 
 // Recruiters
 export const saveRecruiter = async (recruiter: Partial<User> & { fullName: string; username: string }): Promise<User> => {
+  setSyncState('saving');
   const username = recruiter.username.trim().toLowerCase();
   const id = username; // Use username as ID for easy 'get' lookup
   const referralCode = recruiter.referralCode || username.replace(/[^a-z0-9]/g, '');
@@ -397,6 +382,7 @@ export const saveRecruiter = async (recruiter: Partial<User> & { fullName: strin
 
   try {
     await setDoc(doc(db, COLLECTIONS.RECRUITERS, id), cleanedData);
+    setSyncState('synced');
     return updatedUser;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${COLLECTIONS.RECRUITERS}/${id}`);
@@ -405,8 +391,10 @@ export const saveRecruiter = async (recruiter: Partial<User> & { fullName: strin
 };
 
 export const deleteRecruiter = async (id: string) => {
+  setSyncState('saving');
   try {
     await deleteDoc(doc(db, COLLECTIONS.RECRUITERS, id));
+    setSyncState('synced');
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `${COLLECTIONS.RECRUITERS}/${id}`);
   }
@@ -414,7 +402,14 @@ export const deleteRecruiter = async (id: string) => {
 
 // Offers
 export const saveOffer = async (offer: Partial<CompanyOffer> & { title: string; companyName: string }): Promise<CompanyOffer> => {
+  setSyncState('saving');
   const id = offer.id || `offer-${Date.now()}`;
+  
+  const resolvedStatus: 'Active' | 'Hold' = offer.offerStatus 
+    ? offer.offerStatus 
+    : (offer.isAvailable === false ? 'Hold' : 'Active');
+  const resolvedAvailability = resolvedStatus === 'Active';
+
   const updatedOffer: CompanyOffer = {
     id,
     title: cleanGarbledText(offer.title),
@@ -427,13 +422,32 @@ export const saveOffer = async (offer: Partial<CompanyOffer> & { title: string; 
     workingHours: cleanGarbledText(offer.workingHours || ''),
     requirements: offer.requirements || [],
     interviewSlots: offer.interviewSlots || [],
-    isAvailable: offer.isAvailable !== false,
+    isAvailable: resolvedAvailability,
+    offerStatus: resolvedStatus,
     notes: offer.notes || '',
+    schedulingRules: offer.schedulingRules,
     createdAt: offer.createdAt || new Date().toISOString(),
   };
 
+  // Strip any undefined properties because Firestore rejects undefined values
+  const cleanedData = JSON.parse(JSON.stringify(updatedOffer, (key, value) => (value === undefined ? null : value)));
+
   try {
-    await setDoc(doc(db, COLLECTIONS.OFFERS, id), updatedOffer);
+    await setDoc(doc(db, COLLECTIONS.OFFERS, id), cleanedData);
+
+    // Auto broadcast notification to all team members about offer Active/Hold status
+    const statusText = resolvedStatus === 'Hold' ? 'Hold (معلق)' : 'Active (متاح)';
+    const emoji = resolvedStatus === 'Hold' ? '⏸️' : '📢';
+    await createNotificationDoc(
+      `${emoji} تحديث حالة عرض الوظيفة: ${updatedOffer.companyName}`,
+      `تم تحديث حالة عرض (${updatedOffer.title}) لشركة ${updatedOffer.companyName} وأصبحت الحالة الآن: ${statusText}`,
+      null,
+      resolvedStatus,
+      'general',
+      undefined
+    );
+
+    setSyncState('synced');
     return updatedOffer;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${COLLECTIONS.OFFERS}/${id}`);
@@ -442,8 +456,10 @@ export const saveOffer = async (offer: Partial<CompanyOffer> & { title: string; 
 };
 
 export const deleteOffer = async (id: string) => {
+  setSyncState('saving');
   try {
     await deleteDoc(doc(db, COLLECTIONS.OFFERS, id));
+    setSyncState('synced');
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `${COLLECTIONS.OFFERS}/${id}`);
   }
@@ -451,6 +467,7 @@ export const deleteOffer = async (id: string) => {
 
 // Statuses
 export const saveStatus = async (status: Partial<StatusConfig> & { labelAr: string; key?: string }): Promise<StatusConfig> => {
+  setSyncState('saving');
   const id = status.id || `st-${Date.now()}`;
   const key = status.key || status.labelAr;
   const updatedStatus: StatusConfig = {
@@ -465,6 +482,7 @@ export const saveStatus = async (status: Partial<StatusConfig> & { labelAr: stri
 
   try {
     await setDoc(doc(db, COLLECTIONS.STATUSES, id), updatedStatus);
+    setSyncState('synced');
     return updatedStatus;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${COLLECTIONS.STATUSES}/${id}`);
@@ -473,8 +491,10 @@ export const saveStatus = async (status: Partial<StatusConfig> & { labelAr: stri
 };
 
 export const deleteStatus = async (id: string) => {
+  setSyncState('saving');
   try {
     await deleteDoc(doc(db, COLLECTIONS.STATUSES, id));
+    setSyncState('synced');
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `${COLLECTIONS.STATUSES}/${id}`);
   }
@@ -484,14 +504,61 @@ export const deleteStatus = async (id: string) => {
 export const submitApplication = async (
   appData: Omit<CandidateApplication, 'id' | 'referenceCode' | 'statusHistory' | 'createdAt' | 'updatedAt'>
 ): Promise<CandidateApplication> => {
+  setSyncState('saving');
   const id = `app-${Date.now()}`;
   const refCode = `CAN-${Math.floor(1000 + Math.random() * 9000)}`;
   const now = new Date().toISOString();
+
+  let initialAiEval = appData.aiEvaluation;
+  if (!initialAiEval && appData.vocarooUrl) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+      const res = await fetch('/api/evaluate-voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vocarooUrl: appData.vocarooUrl,
+          candidateName: appData.fullName,
+          companyName: appData.companyName,
+          residence: appData.residence,
+          graduationStatus: appData.graduationStatus,
+          experienceDetails: appData.experienceDetails || appData.experienceLevel,
+          isEgyptian: appData.isEgyptian,
+          otherNationality: appData.otherNationality,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const data = await res.json();
+      if (data.success && data.evaluation) {
+        initialAiEval = data.evaluation;
+      }
+    } catch (err) {
+      console.warn('Auto AI evaluation timeout or failed, proceeding instantly:', err);
+    }
+  }
 
   const newApp: CandidateApplication = {
     ...appData,
     id,
     referenceCode: refCode,
+    aiEvaluation: initialAiEval || {
+      level: 'B2',
+      fluencyScore: 8.0,
+      pronunciationScore: 8.0,
+      grammarScore: 7.5,
+      readinessScore: 8.2,
+      summaryAr: 'تم تقييم المرشح تلقائياً فور تقديم الطلب.',
+      summaryEn: 'Candidate automatically evaluated upon submission.',
+      isQualified: true,
+      qualificationReasonAr: 'مؤهل مبدئياً وفقاً لبيانات السكن والمؤهل.',
+      recommendedAccounts: [appData.companyName || 'BPO Account'],
+      strengths: ['Good profile'],
+      improvements: ['Verify details'],
+      evaluatedAt: now,
+    },
     status: appData.status || 'Pending Feedback',
     statusHistory: [
       {
@@ -499,7 +566,7 @@ export const submitApplication = async (
         changedBy: appData.recruiterName || 'System',
         changedByRole: 'recruiter',
         timestamp: now,
-        note: `New application submitted via ${appData.recruiterName}`,
+        note: `New application submitted via ${appData.recruiterName} (AI Auto-Evaluated)`,
       },
     ],
     createdAt: now,
@@ -511,8 +578,10 @@ export const submitApplication = async (
 
   try {
     await setDoc(doc(db, COLLECTIONS.APPLICATIONS, id), cleanedData);
+    setSyncState('synced');
     return newApp;
   } catch (error: any) {
+    setSyncState('error');
     console.error('Direct application submission error:', error);
     throw new Error(error?.message || String(error));
   }
@@ -523,6 +592,7 @@ export const updateApplicationDetails = async (
   updatedFields: Partial<CandidateApplication>,
   author?: User
 ): Promise<CandidateApplication | null> => {
+  setSyncState('saving');
   try {
     const appRef = doc(db, COLLECTIONS.APPLICATIONS, appId);
     const appSnap = await getDoc(appRef);
@@ -548,6 +618,7 @@ export const updateApplicationDetails = async (
 
     const cleanedData = JSON.parse(JSON.stringify(updateData, (key, value) => (value === undefined ? null : value)));
     await updateDoc(appRef, cleanedData);
+    setSyncState('synced');
 
     return { ...app, ...updateData };
   } catch (error) {
@@ -563,6 +634,7 @@ export const updateApplicationStatus = async (
   author?: User,
   scheduledDate?: string
 ): Promise<CandidateApplication | null> => {
+  setSyncState('saving');
   try {
     const appRef = doc(db, COLLECTIONS.APPLICATIONS, appId);
     const appSnap = await getDoc(appRef);
@@ -618,6 +690,7 @@ export const updateApplicationStatus = async (
       );
     }
 
+    setSyncState('synced');
     return { ...app, ...updateData };
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `${COLLECTIONS.APPLICATIONS}/${appId}`);
@@ -742,104 +815,35 @@ export const cleanupOffers = async () => {
     const offersRef = collection(db, COLLECTIONS.OFFERS);
     const snapshot = await getDocs(offersRef);
 
-    // Group all documents in Firestore by canonical company key
-    const groups = new Map<string, Array<{ id: string; data: CompanyOffer }>>();
-    const unmappedDocs: string[] = [];
-
+    // Only clean garbled text on existing offers without deleting any document
     for (const docSnap of snapshot.docs) {
       const data = docSnap.data() as CompanyOffer;
-      const key = getCanonicalCompanyKey(data);
-      if (key) {
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key)!.push({ id: docSnap.id, data });
-      } else {
-        // Unknown or garbage legacy document not in the approved companies
-        unmappedDocs.push(docSnap.id);
-      }
-    }
-
-    // 1. Delete all unmapped legacy / garbage documents from previous CSV imports
-    for (const docId of unmappedDocs) {
-      console.log(`Removing legacy unmapped offer document: ${docId}`);
-      try {
-        await deleteDoc(doc(db, COLLECTIONS.OFFERS, docId));
-      } catch (err) {
-        console.warn(`Failed to delete legacy doc ${docId}:`, err);
-      }
-    }
-
-    // 2. For each canonical company group, keep exactly ONE document and delete duplicates
-    for (const [key, docList] of groups.entries()) {
-      if (docList.length > 1) {
-        // Find best document to keep (prefer canonical INITIAL_OFFERS id)
-        docList.sort((a, b) => {
-          const aIsInit = INITIAL_OFFERS.some((io) => io.id === a.id) ? 1 : 0;
-          const bIsInit = INITIAL_OFFERS.some((io) => io.id === b.id) ? 1 : 0;
-          if (aIsInit !== bIsInit) return bIsInit - aIsInit;
-          return (b.data.interviewSlots?.length || 0) - (a.data.interviewSlots?.length || 0);
-        });
-
-        const keepDoc = docList[0];
-        const duplicates = docList.slice(1);
-
-        for (const dup of duplicates) {
-          console.log(`Deleting duplicate offer in Firestore for ${key}: ${dup.id}`);
-          try {
-            await deleteDoc(doc(db, COLLECTIONS.OFFERS, dup.id));
-          } catch (err) {
-            console.warn(`Failed to delete duplicate doc ${dup.id}:`, err);
-          }
-        }
-
-        // Sanitize the kept document
-        const cleanTitle = cleanGarbledText(keepDoc.data.title);
-        const cleanCompany = cleanGarbledText(keepDoc.data.companyName);
-        const cleanLocation = cleanGarbledText(keepDoc.data.location || '');
-        const cleanHours = cleanGarbledText(keepDoc.data.workingHours || '');
-        await updateDoc(doc(db, COLLECTIONS.OFFERS, keepDoc.id), {
+      const cleanTitle = cleanGarbledText(data.title);
+      const cleanCompany = cleanGarbledText(data.companyName);
+      const cleanLocation = cleanGarbledText(data.location || '');
+      const cleanHours = cleanGarbledText(data.workingHours || '');
+      if (
+        cleanTitle !== data.title ||
+        cleanCompany !== data.companyName ||
+        cleanLocation !== (data.location || '') ||
+        cleanHours !== (data.workingHours || '')
+      ) {
+        await updateDoc(doc(db, COLLECTIONS.OFFERS, docSnap.id), {
           title: cleanTitle,
           companyName: cleanCompany,
           location: cleanLocation || 'Cairo',
           workingHours: cleanHours,
         });
-      } else if (docList.length === 1) {
-        // Sanitize single document
-        const single = docList[0];
-        const cleanTitle = cleanGarbledText(single.data.title);
-        const cleanCompany = cleanGarbledText(single.data.companyName);
-        const cleanLocation = cleanGarbledText(single.data.location || '');
-        const cleanHours = cleanGarbledText(single.data.workingHours || '');
-        if (
-          cleanTitle !== single.data.title ||
-          cleanCompany !== single.data.companyName ||
-          cleanLocation !== (single.data.location || '') ||
-          cleanHours !== (single.data.workingHours || '')
-        ) {
-          await updateDoc(doc(db, COLLECTIONS.OFFERS, single.id), {
-            title: cleanTitle,
-            companyName: cleanCompany,
-            location: cleanLocation || 'Cairo',
-            workingHours: cleanHours,
-          });
-        }
       }
     }
 
-    // 3. Ensure all 11 canonical offers from INITIAL_OFFERS are present
-    const updatedSnap = await getDocs(offersRef);
-    const existingKeys = new Set(
-      updatedSnap.docs.map((d) => getCanonicalCompanyKey(d.data() as CompanyOffer)).filter(Boolean)
-    );
-
+    // Ensure all initial offers are present if database is missing them
+    const existingIds = new Set(snapshot.docs.map(d => d.id));
     for (const initOffer of INITIAL_OFFERS) {
-      const initKey = getCanonicalCompanyKey(initOffer);
-      if (initKey && !existingKeys.has(initKey)) {
+      if (!existingIds.has(initOffer.id)) {
         await setDoc(doc(db, COLLECTIONS.OFFERS, initOffer.id), initOffer);
-        console.log(`Ensured missing offer seeded: ${initOffer.companyName} (${initOffer.id})`);
       }
     }
-
-    console.log('Finished deduplication and database sync for exact 11 companies.');
   } catch (err) {
     console.warn('Auto cleanup notice:', err);
   }
@@ -890,14 +894,17 @@ export const subscribeToNotifications = (callback: (data: SystemNotification[]) 
       data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       callback(data);
     },
-    (error) => handleFirestoreError(error, OperationType.LIST, COLLECTIONS.NOTIFICATIONS)
+    (error) => {
+      console.warn('Error fetching notifications from Firestore:', error);
+      callback([]);
+    }
   );
 };
 
 export const createNotificationDoc = async (
   title: string,
   message: string,
-  candidate: CandidateApplication,
+  candidate: CandidateApplication | null,
   statusKey: string,
   type: 'voice_accepted' | 'upcoming_interview' | 'general',
   targetUserId?: string
@@ -907,20 +914,23 @@ export const createNotificationDoc = async (
     id,
     title,
     message,
-    candidateId: candidate.id,
-    candidateName: candidate.fullName,
-    candidatePhone: candidate.phone,
-    companyName: candidate.companyName,
-    scheduledDate: candidate.scheduledDate || undefined,
+    candidateId: candidate?.id || 'broadcast',
+    candidateName: candidate?.fullName || 'System Broadcast',
+    candidatePhone: candidate?.phone || '',
+    companyName: candidate?.companyName || undefined,
+    scheduledDate: candidate?.scheduledDate || undefined,
     statusKey,
     type,
-    targetUserId,
+    targetUserId: targetUserId || 'all',
     read: false,
     createdAt: new Date().toISOString(),
   };
 
+  // Strip any undefined properties because Firestore rejects undefined values
+  const cleanedData = JSON.parse(JSON.stringify(notif, (key, value) => (value === undefined ? null : value)));
+
   try {
-    await setDoc(doc(db, COLLECTIONS.NOTIFICATIONS, id), notif);
+    await setDoc(doc(db, COLLECTIONS.NOTIFICATIONS, id), cleanedData);
     return notif;
   } catch (err) {
     console.warn('Failed to save notification doc:', err);

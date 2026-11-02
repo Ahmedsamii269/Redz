@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import { AudioPlayerModal } from './AudioPlayerModal';
+import { updateApplicationDetails } from '../lib/storage';
 import { ReferralLinkModal } from './ReferralLinkModal';
 import { StatusHistoryModal } from './StatusHistoryModal';
 import { OfferModal } from './OfferModal';
@@ -36,6 +37,13 @@ import { SocialPostModal } from './SocialPostModal';
 import { StatusChangeModal } from './StatusChangeModal';
 import { WhatsAppDispatchModal } from './WhatsAppDispatchModal';
 import { OfferCard } from './OfferCard';
+import { RecruiterModal } from './RecruiterModal';
+import { CandidatesTable } from './CandidatesTable';
+import { KPIStats } from './KPIStats';
+import { TodayAgendaBanner } from './TodayAgendaBanner';
+import { InterviewCalendar } from './InterviewCalendar';
+import { ThemeToggle } from './ThemeToggle';
+import { getAddMemberButtonLabel } from '../lib/permissions';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface RecruiterDashboardProps {
@@ -70,8 +78,9 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
   const isAdmin = currentUser.role === 'admin';
   const isManagementView = isAccountManager || isUnitManager || isTeamLeader || isAdmin;
 
-  const [activeTab, setActiveTab] = useState<'candidates' | 'offers'>('candidates');
+  const [activeTab, setActiveTab] = useState<'candidates' | 'team' | 'offers' | 'calendar'>('candidates');
   const [searchQuery, setSearchQuery] = useState('');
+  const [teamSearchQuery, setTeamSearchQuery] = useState('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL');
   const [selectedRecruiterFilter, setSelectedRecruiterFilter] = useState('ALL');
 
@@ -79,6 +88,7 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
   const [offerSearchQuery, setOfferSearchQuery] = useState('');
   const [offerFilterWorkType, setOfferFilterWorkType] = useState<string>('ALL');
   const [offerFilterAvailability, setOfferFilterAvailability] = useState<string>('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Modals
   const [selectedCandidateForAudio, setSelectedCandidateForAudio] = useState<CandidateApplication | null>(null);
@@ -98,13 +108,21 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
   const [dispatchCandidate, setDispatchCandidate] = useState<CandidateApplication | null>(null);
   const [dispatchStatus, setDispatchStatus] = useState<string>('voice note accepted');
   const [dispatchNote, setDispatchNote] = useState<string | undefined>();
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+
+  const toggleCandidate = (id: string) => {
+    setSelectedCandidateIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+  const toggleAll = () => {
+    setSelectedCandidateIds(prev => prev.length === paginatedCandidates.length ? [] : paginatedCandidates.map(c => c.id));
+  };
 
   const handleStatusUpdate = async (appId: string, newStatus: string, note?: string, scheduledDate?: string) => {
     if (onUpdateStatus) {
       try {
         await onUpdateStatus(appId, newStatus, note, scheduledDate);
         const cand = Array.isArray(candidates) ? candidates.find((c) => c.id === appId) : null;
-        if (cand && (newStatus === 'voice note accepted' || newStatus === 'Upcoming Interview')) {
+        if ((isAccountManager || isAdmin) && cand && (newStatus === 'voice note accepted' || newStatus === 'Upcoming Interview')) {
           setDispatchCandidate({ ...cand, status: newStatus, scheduledDate: scheduledDate || cand.scheduledDate });
           setDispatchStatus(newStatus);
           setDispatchNote(note);
@@ -133,6 +151,31 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
       }
     });
   }
+
+  // Team members under this manager/leader
+  const myTeamMembers = recruiters.filter((u) => {
+    if (u.id === currentUser.id) return false;
+    if (isAdmin || isAccountManager) return true;
+    if (isUnitManager) {
+      return u.unitManagerId === currentUser.id || (u.role === 'team_leader' && u.unitManagerId === currentUser.id);
+    }
+    if (isTeamLeader) {
+      return u.teamLeaderId === currentUser.id;
+    }
+    return false;
+  });
+
+  const filteredTeamMembers = myTeamMembers.filter((m) => {
+    const q = teamSearchQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      m.fullName.toLowerCase().includes(q) ||
+      m.username.toLowerCase().includes(q) ||
+      m.referralCode.toLowerCase().includes(q) ||
+      m.role.toLowerCase().includes(q) ||
+      (m.phone && m.phone.includes(q))
+    );
+  });
 
   // Candidates for this user role
   const myCandidates = (isAccountManager || isAdmin)
@@ -180,6 +223,13 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
     setTimeout(() => setCopiedOfferId(null), 2000);
   };
 
+  const itemsPerPage = 10;
+  const paginatedCandidates = filteredCandidates.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+  const totalPages = Math.ceil(filteredCandidates.length / itemsPerPage);
+
   return (
     <div className="space-y-6">
       {/* Welcome Banner */}
@@ -217,6 +267,7 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+            <ThemeToggle />
             {onSaveRecruiter && (
               <button
                 onClick={() => {
@@ -226,7 +277,7 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
                 className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>+ Add Recruiter</span>
+                <span>{getAddMemberButtonLabel(currentUser.role).en}</span>
               </button>
             )}
             {onSaveOffer && (
@@ -275,35 +326,129 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
         </div>
       </div>
 
-      {/* KPI Stats Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-slate-500 text-[11px] font-medium block">
-            {isManagementView ? 'Team Candidates' : 'My Candidates'}
-          </span>
-          <span className="text-xl font-bold text-slate-900 font-mono">{totalMyCandidates}</span>
+      {/* 🚀 Recruiter Daily Action & Guidance Checklist (Organized Onboarding & Flow) */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-slate-700/80 rounded-2xl p-5 text-white shadow-md">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-700/60">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-red-600/20 border border-red-500/30 flex items-center justify-center text-red-400 font-bold text-lg shrink-0">
+              📌
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>مرشد الريكروتر اليومي (Recruiter Action Guide & Checklist)</span>
+                <span className="text-[10px] bg-red-500/20 text-red-300 px-2 py-0.5 rounded-full font-mono border border-red-500/30">
+                  Step-by-Step
+                </span>
+              </h2>
+              <p className="text-xs text-slate-300 mt-0.5">
+                خطوات واضحة ومنسقة لضمان عدم ضياع أي فرصة وتأكيد أعلى نسبة قبول للمرشحين
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <button
+              onClick={() => {
+                const link = `${origin}${pathname}?view=apply&ref=${encodeURIComponent(currentUser.referralCode)}`;
+                navigator.clipboard.writeText(link);
+                alert(`تم نسخ رابط الإحالة الخاص بك بنجاح:\n${link}`);
+              }}
+              className="flex-1 md:flex-initial px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>نسخ كود وإحالة التسجيل</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('offers')}
+              className="flex-1 md:flex-initial px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 border border-slate-700"
+            >
+              <Briefcase className="w-3.5 h-3.5 text-red-400" />
+              <span>تصفح العروض المتاحة</span>
+            </button>
+          </div>
         </div>
-        <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-amber-600 text-[11px] font-medium block">Pending Feedback</span>
-          <span className="text-xl font-bold text-amber-700 font-mono">{myPending}</span>
-        </div>
-        <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-emerald-600 text-[11px] font-medium block">Voice Accepted</span>
-          <span className="text-xl font-bold text-emerald-700 font-mono">{myVoiceAccepted}</span>
-        </div>
-        <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-blue-600 text-[11px] font-medium block">Upcoming Interview</span>
-          <span className="text-xl font-bold text-blue-700 font-mono">{myUpcoming}</span>
-        </div>
-        <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-green-700 text-[11px] font-medium block">Accepted Interview</span>
-          <span className="text-xl font-bold text-green-800 font-mono">{myAccepted}</span>
-        </div>
-        <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-teal-600 text-[11px] font-medium block">In Training</span>
-          <span className="text-xl font-bold text-teal-700 font-mono">{myInTraining}</span>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 text-xs">
+          <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/60 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between text-slate-300 font-bold mb-1.5">
+                <span className="flex items-center gap-1.5 text-red-400">
+                  <span className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center text-[11px]">1</span>
+                  اختر العرض الوظيفي
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">{offers.length} عروض</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                انتقل لتبويب "Company Offers" واضغط على "Get Link" أو "WhatsApp Post" لمشاركة الشواغر مع المرشحين.
+              </p>
+            </div>
+            <button
+              onClick={() => setActiveTab('offers')}
+              className="mt-3 text-left font-bold text-red-400 hover:text-red-300 flex items-center gap-1"
+            >
+              <span>استعرض العروض الآن</span> &rarr;
+            </button>
+          </div>
+
+          <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/60 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between text-slate-300 font-bold mb-1.5">
+                <span className="flex items-center gap-1.5 text-amber-400">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center text-[11px]">2</span>
+                  سجل المرشحين أو انشر الرابط
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">كود: {currentUser.referralCode}</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                المرشحون الذين يسجلون عبر رابطك يظهرون مباشرة في جدولك أدناه بكود الإحالة الخاص بك.
+              </p>
+            </div>
+            <button
+              onClick={() => onOpenCandidateView(offers[0]?.id || '', currentUser.referralCode)}
+              className="mt-3 text-left font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1"
+            >
+              <span>فتح نموذج تسجيل مرشح</span> &rarr;
+            </button>
+          </div>
+
+          <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/60 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between text-slate-300 font-bold mb-1.5">
+                <span className="flex items-center gap-1.5 text-emerald-400">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-[11px]">3</span>
+                  تابع حالة الطلبات والمقابلة
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">{myCandidates.length} مرشح</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                تابع التحديثات، استمع للفويس نوت، وقم بتحديث الحالات (Voice Note Accepted / Interview) لتسهيل التواصل عبر الواتساب.
+              </p>
+            </div>
+            <button
+              onClick={() => setActiveTab('candidates')}
+              className="mt-3 text-left font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+            >
+              <span>عرض جدول المرشحين</span> &rarr;
+            </button>
+          </div>
         </div>
       </div>
+
+
+
+      {/* Today's Agenda Banner */}
+      <TodayAgendaBanner
+        candidates={myCandidates}
+        currentUser={currentUser}
+        onOpenCalendar={() => setActiveTab('calendar')}
+        onSelectCandidate={(c) => setSelectedCandidateForStatusChange(c)}
+      />
+
+      {/* KPI Stats Strip */}
+      <KPIStats 
+        candidatesCount={totalMyCandidates} 
+        activeOffersCount={offers.filter(o => o.isAvailable).length}
+        hiredCount={myCandidates.filter(c => c.status === 'accepted' || c.status === 'hired').length}
+      />
       
       {/* Analytics Charts */}
       {isManagementView && (
@@ -326,10 +471,10 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
       )}
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('candidates')}
-          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all shrink-0 ${
             activeTab === 'candidates'
               ? 'bg-slate-900 text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -338,14 +483,40 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
           {isManagementView ? 'Team Candidates' : 'My Candidates'} ({myCandidates.length})
         </button>
         <button
+          onClick={() => setActiveTab('calendar')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'calendar'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <Calendar className="w-3.5 h-3.5 text-red-500" />
+          <span>تقويم المقابلات (Calendar)</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 font-mono">
+            {myCandidates.filter((c) => c.status === 'Upcoming Interview').length}
+          </span>
+        </button>
+        {isManagementView && (
+          <button
+            onClick={() => setActiveTab('team')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all shrink-0 ${
+              activeTab === 'team'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            👥 أعضاء الفريق / My Team ({myTeamMembers.length})
+          </button>
+        )}
+        <button
           onClick={() => setActiveTab('offers')}
-          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all shrink-0 ${
             activeTab === 'offers'
               ? 'bg-slate-900 text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          Company Offers & Direct Referral Links ({offers.length})
+          Company Offers & Referral Links ({offers.length})
         </button>
         {onNavigateTab && (
           <button
@@ -411,203 +582,182 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
             </div>
           </div>
 
+          {/* Bulk Action Bar */}
+          {selectedCandidateIds.length > 0 && (
+            <div className="flex items-center justify-between bg-indigo-50 p-3 rounded-lg border border-indigo-200 mb-4">
+              <span className="text-xs font-bold text-indigo-800">{selectedCandidateIds.length} items selected</span>
+              <button className="px-3 py-1 bg-indigo-600 text-white rounded text-xs font-bold hover:bg-indigo-700">Export</button>
+            </div>
+          )}
+
           {/* Candidates Table */}
+          <CandidatesTable 
+            candidates={myCandidates} // Table handles its own pagination/filtering now
+            statuses={statuses}
+            isManagementView={isManagementView}
+            recruiters={recruiters}
+            selectedIds={selectedCandidateIds}
+            onToggleCandidate={toggleCandidate}
+            onToggleAll={() => setSelectedCandidateIds(selectedCandidateIds.length === myCandidates.length ? [] : myCandidates.map(c => c.id))}
+            onUpdateStatus={handleStatusUpdate}
+            setSelectedCandidateForAudio={setSelectedCandidateForAudio}
+            setSelectedCandidateForStatusChange={setSelectedCandidateForStatusChange}
+            setSelectedCandidateForHistory={setSelectedCandidateForHistory}
+            currentUser={currentUser}
+            />
+        </div>
+      )}
+
+
+      {/* Tab: Team Members Management View */}
+      {activeTab === 'team' && (
+        <div className="space-y-4">
+          {/* Search & Action Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+            <div>
+              <h2 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <span>إدارة أعضاء الفريق (Team Members)</span>
+                <span className="px-2 py-0.5 text-[10px] bg-indigo-50 text-indigo-700 font-bold rounded-full border border-indigo-200">
+                  {myTeamMembers.length} Members
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {isTeamLeader
+                  ? 'يمكنك إضافة ريكروترز وتحديد الأكواد وتعديل بياناتهم.'
+                  : isUnitManager
+                  ? 'يمكنك إضافة ريكروترز وتيم ليدرز وإدارة فريق اليونت.'
+                  : 'يمكنك إضافة وإدارة كافة الرتب في النظام.'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={teamSearchQuery}
+                  onChange={(e) => setTeamSearchQuery(e.target.value)}
+                  placeholder="البحث باسم العضو، اليوزر، الكود..."
+                  className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs"
+                />
+              </div>
+
+              {onSaveRecruiter && (
+                <button
+                  onClick={() => {
+                    setEditingRecruiter(null);
+                    setIsRecruiterModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{getAddMemberButtonLabel(currentUser.role).ar}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Members Table */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold">
-                    <th className="py-3 px-4">Candidate</th>
-                    <th className="py-3 px-4">Company & Role</th>
-                    {isManagementView && <th className="py-3 px-4">Recruiter</th>}
-                    <th className="py-3 px-4">Interview Slot</th>
-                    <th className="py-3 px-4">Voice Note</th>
-                    <th className="py-3 px-4">Current Status & Feedback</th>
-                    <th className="py-3 px-4 text-center">Contact</th>
+                    <th className="py-3 px-4">Member Name</th>
+                    <th className="py-3 px-4">System Role</th>
+                    <th className="py-3 px-4">Referral Code & Login</th>
+                    <th className="py-3 px-4">Phone / Contact</th>
+                    <th className="py-3 px-4">Assigned Leaders</th>
+                    <th className="py-3 px-4">Account Status</th>
+                    <th className="py-3 px-4 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredCandidates.length === 0 ? (
+                  {filteredTeamMembers.length === 0 ? (
                     <tr>
-                      <td colSpan={isManagementView ? 7 : 6} className="py-12 text-center text-slate-400">
-                        {myCandidates.length === 0
-                          ? 'No candidates registered in your team yet.'
-                          : 'No candidates matching search criteria.'}
+                      <td colSpan={7} className="py-12 text-center text-slate-400">
+                        {myTeamMembers.length === 0
+                          ? 'No team members added yet. Click "+ Add Member" above to create one.'
+                          : 'No team members match your search query.'}
                       </td>
                     </tr>
                   ) : (
-                    filteredCandidates.map((cand) => (
-                      <tr key={cand.id} className="hover:bg-slate-50/60 transition-colors">
-                        {/* Candidate Details */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-bold text-slate-900 text-xs">{cand.fullName}</div>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
-                            <span className="font-mono text-slate-600">{cand.phone}</span>
-                            <span>·</span>
-                            <span>{cand.residence}</span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
-                            <span className="font-mono text-red-600 font-semibold">{cand.referenceCode}</span>
-                            <span>·</span>
-                            <span>{cand.graduationStatus === 'graduated' ? 'Graduated' : 'Student'}</span>
-                            <span>·</span>
-                            <span className="inline-flex items-center px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded font-medium">
-                              Exp: {cand.experienceLevel || 'Fresh'}
-                            </span>
-                            {cand.experienceDetails && (
-                              <span className="text-slate-500 max-w-[150px] truncate" title={cand.experienceDetails}>
-                                ({cand.experienceDetails})
-                              </span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Company */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-semibold text-slate-800">{cand.companyName}</div>
-                          <div className="text-[11px] text-slate-500 mt-0.5 truncate max-w-[200px]">
-                            {cand.offerTitle}
-                          </div>
-                        </td>
-
-                        {/* Recruiter (Only for Management Views) */}
-                        {isManagementView && (
-                          <td className="py-3.5 px-4">
-                            <div className="font-semibold text-slate-800">{cand.recruiterName}</div>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <span className="text-[10px] font-mono text-red-600 font-bold">@{cand.recruiterCode}</span>
-                              {(() => {
-                                const rec = recruiters.find(r => r.id === cand.recruiterId);
-                                if (rec && !rec.teamLeaderId && !rec.unitManagerId && rec.role === 'recruiter') {
-                                  return (
-                                    <span className="text-[9px] bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded font-bold">
-                                      Indirect Team (CEO)
-                                    </span>
-                                  );
-                                }
-                                return null;
-                              })()}
-                            </div>
-                          </td>
-                        )}
-
-                        {/* Interview Slot */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-medium text-slate-800 text-[11px]">
-                            {cand.interviewSlotDetails}
-                          </div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            Applied: {new Date(cand.createdAt).toLocaleDateString()}
-                          </div>
-                        </td>
-
-                        {/* Voice Note */}
-                        <td className="py-3.5 px-4">
-                          <div className="flex flex-col gap-1.5">
-                            <button
-                              onClick={() => setSelectedCandidateForAudio(cand)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-md font-medium transition-colors text-[10px]"
-                            >
-                              <Volume2 className="w-3 h-3" />
-                              <span>Audio 1 (English)</span>
-                            </button>
-                            {cand.vocarooUrl2 && (
-                              <button
-                                onClick={() => setSelectedCandidateForAudio({ ...cand, vocarooUrl: cand.vocarooUrl2! })}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-medium transition-colors text-[10px]"
-                              >
-                                <Volume2 className="w-3 h-3" />
-                                <span>Audio 2 (Second Lang)</span>
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Status & Feedback Notes */}
-                        <td className="py-3.5 px-4 max-w-[260px]">
-                          <div className="flex items-center justify-between gap-2">
-                            <StatusBadge status={cand.status} statuses={statuses} size="sm" />
-                            {onUpdateStatus && (
-                              <button
-                                onClick={() => setSelectedCandidateForStatusChange(cand)}
-                                className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2 py-0.5 rounded border border-red-200 transition-colors shrink-0"
-                                title="Change candidate status"
-                              >
-                                <Edit className="w-3 h-3" />
-                                <span>Status</span>
-                              </button>
-                            )}
-                          </div>
-                          {cand.status === 'Upcoming Interview' && cand.scheduledDate && (
-                            <div className="text-[10px] font-bold text-blue-700 mt-1.5 flex flex-wrap items-center justify-between gap-1.5 bg-blue-50/90 p-2 rounded-lg border border-blue-200">
-                              <div className="flex items-center gap-1">
-                                <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                                <span>
-                                  Scheduled: {new Date(cand.scheduledDate).toLocaleString('en-US', {
-                                    weekday: 'short',
-                                    month: 'short',
-                                    day: 'numeric',
-                                    hour: 'numeric',
-                                    minute: '2-digit',
-                                    hour12: true
-                                  })}
-                                </span>
-                              </div>
-                              {(() => {
-                                const startDate = new Date(cand.scheduledDate);
-                                if (isNaN(startDate.getTime())) return null;
-                                const endDate = new Date(startDate.getTime() + 45 * 60 * 1000);
-                                const formatIso = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, '');
-                                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('Interview: ' + cand.fullName + ' (' + cand.companyName + ')')}&details=${encodeURIComponent('Candidate: ' + cand.fullName + '\nPhone: ' + cand.phone + '\nRef: ' + cand.referenceCode + '\nCompany: ' + cand.companyName + '\nRole: ' + cand.offerTitle + '\nRecruiter: ' + cand.recruiterName)}&dates=${formatIso(startDate)}/${formatIso(endDate)}`;
-                                return (
-                                  <a
-                                    href={gCalUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-bold transition-all shadow-2xs shrink-0"
-                                    title="Add interview to Google Calendar"
-                                  >
-                                    <Calendar className="w-2.5 h-2.5" />
-                                    <span>Sync Calendar</span>
-                                  </a>
-                                );
-                              })()}
-                            </div>
+                    filteredTeamMembers.map((member) => (
+                      <tr key={member.id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 px-4 font-bold text-slate-900">
+                          {member.fullName}
+                          {member.email && (
+                            <div className="text-[11px] font-normal text-slate-400">{member.email}</div>
                           )}
-                          {cand.feedbackNotes ? (
-                            <div className="text-[11px] text-slate-700 bg-amber-50/80 p-2 rounded border border-amber-200/80 mt-1.5">
-                              <span className="text-[10px] font-bold text-amber-800 block">
-                                Feedback / Notes:
-                              </span>
-                              "{cand.feedbackNotes}"
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-slate-400 block mt-1 italic">
-                              Awaiting status update...
-                            </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                              member.role === 'admin'
+                                ? 'bg-red-100 text-red-800 border border-red-200'
+                                : member.role === 'account_manager'
+                                ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                : member.role === 'unit_manager'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                : member.role === 'team_leader'
+                                ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                : 'bg-slate-100 text-slate-800 border border-slate-200'
+                            }`}
+                          >
+                            {member.role === 'admin'
+                              ? 'Admin / CEO'
+                              : member.role === 'account_manager'
+                              ? 'Account Manager'
+                              : member.role === 'unit_manager'
+                              ? 'Unit Manager 🏢'
+                              : member.role === 'team_leader'
+                              ? 'Team Leader 👥'
+                              : 'Recruiter'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-mono">
+                          <div className="font-bold text-red-600">@{member.referralCode}</div>
+                          <div className="text-[10px] text-slate-400">user: {member.username}</div>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-slate-700">
+                          {member.phone || 'N/A'}
+                        </td>
+                        <td className="py-3 px-4 text-[11px]">
+                          {member.teamLeaderName && (
+                            <div className="text-purple-700 font-medium">TL: {member.teamLeaderName}</div>
                           )}
+                          {member.unitManagerName && (
+                            <div className="text-amber-700 font-medium">UM: {member.unitManagerName}</div>
+                          )}
+                          {member.accountManagerName && (
+                            <div className="text-blue-700 font-medium">AM: {member.accountManagerName}</div>
+                          )}
+                          {!member.teamLeaderName && !member.unitManagerName && !member.accountManagerName && (
+                            <span className="text-slate-400 italic">Direct Account</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              member.active !== false
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-rose-100 text-rose-800'
+                            }`}
+                          >
+                            {member.active !== false ? 'Active' : 'Suspended'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
                           <button
-                            onClick={() => setSelectedCandidateForHistory(cand)}
-                            className="text-[10px] text-red-600 hover:text-red-700 mt-2 font-semibold underline block"
+                            onClick={() => {
+                              setEditingRecruiter(member);
+                              setIsRecruiterModalOpen(true);
+                            }}
+                            className="p-1.5 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                            title="Edit User Account"
                           >
-                            View Full History & Updates
+                            <Edit className="w-4 h-4" />
                           </button>
-                        </td>
-
-                        {/* WhatsApp Contact */}
-                        <td className="py-3.5 px-4 text-center">
-                          <a
-                            href={`https://wa.me/2${cand.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
-                              `Hello ${cand.fullName}, regarding your application for ${cand.companyName}...`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-md transition-colors font-medium text-[11px]"
-                            title="Chat on WhatsApp"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5" />
-                            <span>WhatsApp</span>
-                          </a>
                         </td>
                       </tr>
                     ))
@@ -619,7 +769,7 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
         </div>
       )}
 
-      {/* Tab 2: Offers & Direct Referral Links */}
+      {/* Tab 3: Offers & Direct Referral Links */}
       {activeTab === 'offers' && (() => {
         const filteredOffers = offers.filter((off) => {
           if (offerFilterAvailability === 'active' && !off.isAvailable) return false;
@@ -813,6 +963,7 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
                           }
                         : undefined
                     }
+                    onStatusToggle={onSaveOffer ? (o) => onSaveOffer(o as any) : undefined}
                     isAdmin={isAdmin}
                   />
                 ))}
@@ -822,6 +973,21 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
         );
       })()}
 
+      {/* Tab: Interview Calendar */}
+      {activeTab === 'calendar' && (
+        <div className="animate-in fade-in duration-200">
+          <InterviewCalendar
+            candidates={myCandidates}
+            offers={offers}
+            recruiters={recruiters}
+            currentUser={currentUser}
+            statuses={statuses}
+            onSelectCandidateForAudio={(cand) => setSelectedCandidateForAudio(cand)}
+            onSelectCandidateForStatus={(cand) => setSelectedCandidateForStatusChange(cand)}
+          />
+        </div>
+      )}
+
       {/* Audio Player Modal */}
       <AudioPlayerModal
         isOpen={Boolean(selectedCandidateForAudio)}
@@ -829,6 +995,14 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
         vocarooUrl={selectedCandidateForAudio?.vocarooUrl || ''}
         candidateName={selectedCandidateForAudio?.fullName || ''}
         companyName={selectedCandidateForAudio?.companyName || ''}
+        candidateId={selectedCandidateForAudio?.id}
+        experienceDetails={selectedCandidateForAudio?.experienceDetails}
+        initialEvaluation={selectedCandidateForAudio?.aiEvaluation}
+        onUpdateEvaluation={(evalData) => {
+          if (selectedCandidateForAudio) {
+            updateApplicationDetails(selectedCandidateForAudio.id, { aiEvaluation: evalData });
+          }
+        }}
         showAdminActions={Boolean(onUpdateStatus)}
         onAcceptVoice={() => {
           if (selectedCandidateForAudio && onUpdateStatus) {
@@ -860,14 +1034,16 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
         onSaveStatus={handleStatusUpdate}
       />
 
-      {/* Auto WhatsApp Dispatch Modal */}
-      <WhatsAppDispatchModal
-        isOpen={Boolean(dispatchCandidate)}
-        onClose={() => setDispatchCandidate(null)}
-        candidate={dispatchCandidate}
-        newStatus={dispatchStatus}
-        note={dispatchNote}
-      />
+      {/* Auto WhatsApp Dispatch Modal (Admin & Account Manager only) */}
+      {(isAccountManager || isAdmin) && (
+        <WhatsAppDispatchModal
+          isOpen={Boolean(dispatchCandidate)}
+          onClose={() => setDispatchCandidate(null)}
+          candidate={dispatchCandidate}
+          newStatus={dispatchStatus}
+          note={dispatchNote}
+        />
+      )}
 
       {/* Referral Link & WhatsApp Share Modal */}
       <ReferralLinkModal
@@ -911,16 +1087,9 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
           }}
           recruiterToEdit={editingRecruiter}
           allUsers={recruiters}
-          onSave={(data) => {
-            const finalData = { ...data };
-            if (isTeamLeader) {
-              finalData.teamLeaderId = currentUser.id;
-            } else if (isUnitManager) {
-              finalData.unitManagerId = currentUser.id;
-            } else if (isAccountManager) {
-              finalData.accountManagerId = currentUser.id;
-            }
-            onSaveRecruiter(finalData);
+          currentUser={currentUser}
+          onSave={(data: any) => {
+            onSaveRecruiter(data);
           }}
         />
       )}

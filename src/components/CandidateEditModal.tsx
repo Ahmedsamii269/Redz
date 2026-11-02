@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, User, Phone, Mail, MapPin, Briefcase } from 'lucide-react';
 import { CandidateApplication } from '../types';
 
@@ -15,16 +15,28 @@ export const CandidateEditModal: React.FC<CandidateEditModalProps> = ({
   candidate,
   onSave,
 }) => {
-  if (!isOpen || !candidate) return null;
-
-  const [fullName, setFullName] = useState(candidate.fullName || '');
-  const [phone, setPhone] = useState(candidate.phone || '');
-  const [email, setEmail] = useState(candidate.email || '');
-  const [residence, setResidence] = useState(candidate.residence || '');
-  const [experienceLevel, setExperienceLevel] = useState(candidate.experienceLevel || 'Fresh Graduate / No Experience');
-  const [experienceDetails, setExperienceDetails] = useState(candidate.experienceDetails || '');
+  const [fullName, setFullName] = useState(candidate?.fullName || '');
+  const [phone, setPhone] = useState(candidate?.phone || '');
+  const [email, setEmail] = useState(candidate?.email || '');
+  const [residence, setResidence] = useState(candidate?.residence || '');
+  const [experienceLevel, setExperienceLevel] = useState(candidate?.experienceLevel || 'Fresh Graduate / No Experience');
+  const [experienceDetails, setExperienceDetails] = useState(candidate?.experienceDetails || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (candidate) {
+      setFullName(candidate.fullName || '');
+      setPhone(candidate.phone || '');
+      setEmail(candidate.email || '');
+      setResidence(candidate.residence || '');
+      setExperienceLevel(candidate.experienceLevel || 'Fresh Graduate / No Experience');
+      setExperienceDetails(candidate.experienceDetails || '');
+      setError(null);
+    }
+  }, [candidate?.id, candidate?.fullName, candidate?.phone, candidate?.email, candidate?.residence, candidate?.experienceLevel, candidate?.experienceDetails]);
+
+  if (!isOpen || !candidate) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

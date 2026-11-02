@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { X, Send, Copy, Check, MessageSquare, Phone, UserCheck } from 'lucide-react';
+import { X, Send, Copy, Check, MessageSquare, Phone, UserCheck, Sparkles } from 'lucide-react';
 import { CandidateApplication } from '../types';
 import {
   getStoredWhatsAppConfig,
   saveStoredWhatsAppConfig,
   formatWhatsAppCandidateMessage,
+  getCompanyConfirmationMessage,
+  getAskForFeedbackMessage,
   openWhatsAppDirect,
 } from '../lib/whatsapp';
 
@@ -23,26 +25,57 @@ export const WhatsAppDispatchModal: React.FC<WhatsAppDispatchModalProps> = ({
   newStatus,
   note,
 }) => {
-  if (!isOpen || !candidate) return null;
-
   const isVoiceAccepted = newStatus === 'voice note accepted';
   const isUpcomingInterview = newStatus === 'Upcoming Interview';
 
   const config = getStoredWhatsAppConfig();
-  const initialTargetPhone = isVoiceAccepted ? config.voiceAcceptedPhone : config.upcomingInterviewPhone;
-  const initialEmpName = isVoiceAccepted ? config.voiceAcceptedEmployeeName : config.upcomingInterviewEmployeeName;
+  
+  // Message template mode for Upcoming Interview
+  // 'candidate_confirmation' | 'candidate_feedback' | 'internal_routing'
+  const [msgMode, setMsgMode] = useState<'candidate_confirmation' | 'candidate_feedback' | 'internal_routing'>(
+    isUpcomingInterview ? 'candidate_confirmation' : 'internal_routing'
+  );
 
-  const [targetPhone, setTargetPhone] = useState(initialTargetPhone);
-  const [employeeName, setEmployeeName] = useState(initialEmpName);
+  const [targetPhone, setTargetPhone] = useState(
+    msgMode === 'internal_routing' 
+      ? (isVoiceAccepted ? config.voiceAcceptedPhone : config.upcomingInterviewPhone)
+      : (candidate?.phone || '')
+  );
+  const [employeeName, setEmployeeName] = useState(
+    isVoiceAccepted ? config.voiceAcceptedEmployeeName : config.upcomingInterviewEmployeeName
+  );
   const [copied, setCopied] = useState(false);
   const [saveAsDefault, setSaveAsDefault] = useState(true);
 
-  const formattedMessage = formatWhatsAppCandidateMessage(candidate, newStatus, note);
+  if (!isOpen || !candidate) return null;
+
+  // Compute active message based on mode
+  let activeMessage = '';
+  if (isUpcomingInterview) {
+    if (msgMode === 'candidate_confirmation') {
+      activeMessage = getCompanyConfirmationMessage(candidate);
+    } else if (msgMode === 'candidate_feedback') {
+      activeMessage = getAskForFeedbackMessage(candidate);
+    } else {
+      activeMessage = formatWhatsAppCandidateMessage(candidate, newStatus, note);
+    }
+  } else {
+    activeMessage = formatWhatsAppCandidateMessage(candidate, newStatus, note);
+  }
+
+  const handleModeChange = (mode: 'candidate_confirmation' | 'candidate_feedback' | 'internal_routing') => {
+    setMsgMode(mode);
+    if (mode === 'internal_routing') {
+      setTargetPhone(isVoiceAccepted ? config.voiceAcceptedPhone : config.upcomingInterviewPhone);
+    } else {
+      setTargetPhone(candidate.phone || '');
+    }
+  };
 
   const handleSend = () => {
     if (!targetPhone.trim()) return;
 
-    if (saveAsDefault) {
+    if (saveAsDefault && msgMode === 'internal_routing') {
       if (isVoiceAccepted) {
         saveStoredWhatsAppConfig(
           targetPhone.trim(),
@@ -60,12 +93,12 @@ export const WhatsAppDispatchModal: React.FC<WhatsAppDispatchModalProps> = ({
       }
     }
 
-    openWhatsAppDirect(targetPhone.trim(), formattedMessage);
+    openWhatsAppDirect(targetPhone.trim(), activeMessage);
     onClose();
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(formattedMessage);
+    navigator.clipboard.writeText(activeMessage);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -73,7 +106,7 @@ export const WhatsAppDispatchModal: React.FC<WhatsAppDispatchModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-150" dir="rtl">
       <div
-        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden text-right"
+        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[95vh] flex flex-col overflow-hidden text-right"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -84,14 +117,12 @@ export const WhatsAppDispatchModal: React.FC<WhatsAppDispatchModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-base text-white">
-                {isVoiceAccepted
-                  ? '🎧 إرسال إشعار لمنسق مواعيد الانترفيو'
-                  : '📅 إرسال إشعار لمسؤول الفيدباك والمتابعة'}
+                {isUpcomingInterview
+                  ? '📅 إرسال رسالة واتساب للانترفيو أو الفيدباك'
+                  : '🎧 إرسال إشعار لمنسق مواعيد الانترفيو'}
               </h3>
               <p className="text-xs text-slate-300">
-                {isVoiceAccepted
-                  ? 'إرسال بيانات الكانديدت للشخص المسؤول لحجز معاد الانترفيو وتحديث الحالة'
-                  : 'إرسال بيانات الكانديدت للشخص المسؤول لمتابعة حضور الانترفيو وأخذ الفيدباك'}
+                إرسال رسالة كونفرميشن أو طلب فيدباك للكانديدت أو إشعار داخلي للاكونت مانجر
               </p>
             </div>
           </div>
@@ -105,27 +136,73 @@ export const WhatsAppDispatchModal: React.FC<WhatsAppDispatchModalProps> = ({
 
         {/* Content */}
         <div className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
-          {/* Target Employee & Phone Input Box */}
+          {/* Mode Selector for Upcoming Interview */}
+          {isUpcomingInterview && (
+            <div className="grid grid-cols-3 gap-2 p-1.5 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => handleModeChange('candidate_confirmation')}
+                className={`py-2 px-3 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
+                  msgMode === 'candidate_confirmation'
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>تأكيد الانترفيو (للعنوان والوقت)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleModeChange('candidate_feedback')}
+                className={`py-2 px-3 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
+                  msgMode === 'candidate_feedback'
+                    ? 'bg-amber-600 text-white shadow-md'
+                    : 'text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>طلب الفيدباك (Ask for Feedback)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleModeChange('internal_routing')}
+                className={`py-2 px-3 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
+                  msgMode === 'internal_routing'
+                    ? 'bg-slate-900 text-white shadow-md'
+                    : 'text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>إشعار داخلي (للاكونت مانجر)</span>
+              </button>
+            </div>
+          )}
+
+          {/* Target Phone & Recipient Box */}
           <div className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-xl space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block font-bold text-emerald-950 text-xs mb-1 flex items-center gap-1">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  اسم الموظف المستلم:
-                </label>
-                <input
-                  type="text"
-                  value={employeeName}
-                  onChange={(e) => setEmployeeName(e.target.value)}
-                  placeholder="مثال: منسق حجز المواعيد"
-                  className="w-full p-2.5 rounded-lg border border-emerald-300 focus:ring-2 focus:ring-emerald-500 bg-white font-semibold text-slate-900 text-xs"
-                />
-              </div>
+              {msgMode === 'internal_routing' && (
+                <div>
+                  <label className="block font-bold text-emerald-950 text-xs mb-1 flex items-center gap-1">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    اسم المسؤول المستلم:
+                  </label>
+                  <input
+                    type="text"
+                    value={employeeName}
+                    onChange={(e) => setEmployeeName(e.target.value)}
+                    placeholder="مثال: مسؤول الفيدباك"
+                    className="w-full p-2.5 rounded-lg border border-emerald-300 focus:ring-2 focus:ring-emerald-500 bg-white font-semibold text-slate-900 text-xs"
+                  />
+                </div>
+              )}
 
-              <div>
+              <div className={msgMode === 'internal_routing' ? '' : 'sm:col-span-2'}>
                 <label className="block font-bold text-emerald-950 text-xs mb-1 flex items-center gap-1">
                   <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                  رقم الواتساب المستهدف:
+                  {msgMode === 'internal_routing' ? 'رقم الواتساب المستهدف (المسؤول):' : `رقم واتساب الكانديدت (${candidate.fullName}):`}
                 </label>
                 <input
                   type="tel"
@@ -137,23 +214,31 @@ export const WhatsAppDispatchModal: React.FC<WhatsAppDispatchModalProps> = ({
               </div>
             </div>
 
-            <div className="pt-1 border-t border-emerald-200/60 flex items-center justify-between text-[11px] text-emerald-900">
-              <label className="flex items-center gap-1.5 cursor-pointer font-medium">
-                <input
-                  type="checkbox"
-                  checked={saveAsDefault}
-                  onChange={(e) => setSaveAsDefault(e.target.checked)}
-                  className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
-                />
-                <span>حفظ كبيانات افتراضية لـ {isVoiceAccepted ? 'منسق المواعيد' : 'مسؤول الفيدباك'}</span>
-              </label>
-            </div>
+            {msgMode === 'internal_routing' && (
+              <div className="pt-1 border-t border-emerald-200/60 flex items-center justify-between text-[11px] text-emerald-900">
+                <label className="flex items-center gap-1.5 cursor-pointer font-medium">
+                  <input
+                    type="checkbox"
+                    checked={saveAsDefault}
+                    onChange={(e) => setSaveAsDefault(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
+                  />
+                  <span>حفظ كبيانات افتراضية</span>
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Formatted Message Preview */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="font-bold text-slate-800 text-xs">معاينة الرسالة المنسقة للموظف:</span>
+              <span className="font-bold text-slate-800 text-xs">
+                {msgMode === 'candidate_confirmation'
+                  ? `معاينة رسالة تأكيد الانترفيو (${candidate.companyName}):`
+                  : msgMode === 'candidate_feedback'
+                  ? 'معاينة رسالة طلب الفيدباك (Ask for Feedback):'
+                  : 'معاينة الإشعار الداخلي المنسق:'}
+              </span>
               <button
                 type="button"
                 onClick={handleCopy}
@@ -165,8 +250,8 @@ export const WhatsAppDispatchModal: React.FC<WhatsAppDispatchModalProps> = ({
             </div>
             <textarea
               readOnly
-              rows={11}
-              value={formattedMessage}
+              rows={12}
+              value={activeMessage}
               className="w-full p-3 rounded-xl border border-slate-300 bg-slate-50 font-mono text-slate-800 text-[11px] leading-relaxed shadow-inner focus:outline-none"
             />
           </div>
@@ -186,7 +271,7 @@ export const WhatsAppDispatchModal: React.FC<WhatsAppDispatchModalProps> = ({
               className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-all shadow-md flex items-center gap-2 text-xs"
             >
               <Send className="w-4 h-4" />
-              <span>إرسال الإشعار عبر الواتساب للموظف 📲</span>
+              <span>{msgMode === 'internal_routing' ? 'إرسال الإشعار للمسؤول عبر الواتساب 📲' : 'إرسال الرسالة للكانديدت عبر الواتساب 📲'}</span>
             </button>
           </div>
         </div>

@@ -30,12 +30,15 @@ import {
   Medal,
   Award,
   Crown,
+  Megaphone,
 } from 'lucide-react';
+import { createNotificationDoc, updateApplicationDetails } from '../lib/storage';
 import { CandidateApplication, CompanyOffer, StatusConfig, User } from '../types';
 import * as XLSX from 'xlsx';
 import { StatusBadge } from './StatusBadge';
 import { AudioPlayerModal } from './AudioPlayerModal';
 import { StatusChangeModal } from './StatusChangeModal';
+import { StatusHistoryModal } from './StatusHistoryModal';
 import { OfferModal } from './OfferModal';
 import { RecruiterModal } from './RecruiterModal';
 import { StatusModal } from './StatusModal';
@@ -43,10 +46,20 @@ import { ReferralLinkModal } from './ReferralLinkModal';
 import { SocialPostModal } from './SocialPostModal';
 import { AdminSecurityModal } from './AdminSecurityModal';
 import { WhatsAppDispatchModal } from './WhatsAppDispatchModal';
+import { BroadcastModal } from './BroadcastModal';
 import { RedzLogo } from './RedzLogo';
 import { OfferCard } from './OfferCard';
 import { Leaderboard } from './Leaderboard';
 import { CandidateEditModal } from './CandidateEditModal';
+import { KPIStats } from './KPIStats';
+import { CandidateKanban } from './CandidateKanban';
+import { TeamHierarchy } from './TeamHierarchy';
+import { ThemeToggle } from './ThemeToggle';
+import { CandidatesTable } from './CandidatesTable';
+import { TodayAgendaBanner } from './TodayAgendaBanner';
+import { DailyWhatsAppReportModal } from './DailyWhatsAppReportModal';
+import { InterviewCalendar } from './InterviewCalendar';
+import { FileText } from 'lucide-react';
 
 interface AdminDashboardProps {
   currentUser: User | null;
@@ -54,11 +67,12 @@ interface AdminDashboardProps {
   offers: CompanyOffer[];
   recruiters: User[];
   statuses: StatusConfig[];
-  activeSubTab: 'candidates' | 'offers' | 'all-offers' | 'recruiters' | 'statuses' | 'leaderboard';
-  onSubTabChange: (tab: 'candidates' | 'offers' | 'all-offers' | 'recruiters' | 'statuses' | 'leaderboard') => void;
+  activeSubTab: 'candidates' | 'offers' | 'all-offers' | 'recruiters' | 'statuses' | 'leaderboard' | 'kanban' | 'hierarchy' | 'calendar';
+  onSubTabChange: (tab: 'candidates' | 'offers' | 'all-offers' | 'recruiters' | 'statuses' | 'leaderboard' | 'kanban' | 'hierarchy' | 'calendar') => void;
   onUpdateStatus: (appId: string, newStatus: string, note?: string, scheduledDate?: string) => void;
   onUpdateCandidateDetails?: (appId: string, updatedFields: Partial<CandidateApplication>) => void;
   onDeleteApplication: (appId: string) => void;
+  onBulkDelete?: (appIds: string[]) => void;
   onSaveOffer: (offerData: Partial<CompanyOffer> & { title: string; companyName: string }) => void;
   onDeleteOffer: (offerId: string) => void;
   onSaveRecruiter: (recruiterData: Partial<User> & { fullName: string; username: string }) => void;
@@ -100,7 +114,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL');
   const [selectedCompanyFilter, setSelectedCompanyFilter] = useState('ALL');
   const [selectedRecruiterFilter, setSelectedRecruiterFilter] = useState('ALL');
-  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Offers Tab Search & Filters
   const [offerSearchQuery, setOfferSearchQuery] = useState('');
@@ -110,6 +124,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Modals state
   const [selectedCandidateForAudio, setSelectedCandidateForAudio] = useState<CandidateApplication | null>(null);
   const [selectedCandidateForStatus, setSelectedCandidateForStatus] = useState<CandidateApplication | null>(null);
+  const [selectedCandidateForHistory, setSelectedCandidateForHistory] = useState<CandidateApplication | null>(null);
   const [selectedCandidateForEdit, setSelectedCandidateForEdit] = useState<CandidateApplication | null>(null);
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState<CompanyOffer | null>(null);
@@ -121,7 +136,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedOfferForSocialPost, setSelectedOfferForSocialPost] = useState<CompanyOffer | null>(null);
   const [isSocialPostModalOpen, setIsSocialPostModalOpen] = useState(false);
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
+  const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+  const [isWhatsAppReportModalOpen, setIsWhatsAppReportModalOpen] = useState(false);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+
+  const handleSendBroadcast = async (title: string, message: string) => {
+    await createNotificationDoc(
+      title,
+      message,
+      null,
+      'broadcast',
+      'general',
+      undefined
+    );
+  };
 
   // WhatsApp Auto Dispatch state
   const [dispatchCandidate, setDispatchCandidate] = useState<CandidateApplication | null>(null);
@@ -279,13 +307,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <ThemeToggle />
+          <button
+            onClick={() => setIsWhatsAppReportModalOpen(true)}
+            className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+            title="Generate and copy daily WhatsApp summary report"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>ملخص الواتساب</span>
+          </button>
+          <button
+            onClick={() => setIsBroadcastModalOpen(true)}
+            className="px-3.5 py-2 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+            title="Send broadcast notification to all team members"
+          >
+            <Megaphone className="w-3.5 h-3.5" />
+            <span>إرسال للجميع</span>
+          </button>
           <button
             onClick={() => setIsSecurityModalOpen(true)}
             className="px-3.5 py-2 bg-slate-800/90 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold border border-slate-700 transition-colors flex items-center gap-1.5"
             title="Manage security & password"
           >
-            <span>Security & Credentials</span>
+            <span>Security</span>
           </button>
           <button
             onClick={() => {
@@ -295,42 +340,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
           >
             <Plus className="w-3.5 h-3.5" />
-            + Add Job Offer
+            + Add Offer
           </button>
         </div>
       </div>
 
+      {/* Today's Agenda Banner */}
+      <TodayAgendaBanner
+        candidates={candidates}
+        currentUser={currentUser}
+        onOpenCalendar={() => onSubTabChange('calendar')}
+        onSelectCandidate={(c) => setSelectedCandidateForStatus(c)}
+      />
+
       {/* KPI Stats Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-        <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-slate-500 text-[11px] font-medium block">Total Candidates</span>
-          <span className="text-xl font-bold text-slate-900 font-mono">{totalCount}</span>
-        </div>
-        <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-amber-600 text-[11px] font-medium block">Pending Feedback</span>
-          <span className="text-xl font-bold text-amber-700 font-mono">{pendingCount}</span>
-        </div>
-        <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-blue-600 text-[11px] font-medium block">Upcoming Interview</span>
-          <span className="text-xl font-bold text-blue-700 font-mono">{upcomingCount}</span>
-        </div>
-        <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-emerald-600 text-[11px] font-medium block">Voice Accepted</span>
-          <span className="text-xl font-bold text-emerald-700 font-mono">{voiceAcceptedCount}</span>
-        </div>
-        <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-green-700 text-[11px] font-medium block">Accepted Interview</span>
-          <span className="text-xl font-bold text-green-800 font-mono">{acceptedInterviewCount}</span>
-        </div>
-        <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-teal-600 text-[11px] font-medium block">In Training</span>
-          <span className="text-xl font-bold text-teal-700 font-mono">{inTrainingCount}</span>
-        </div>
-        <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-red-600 text-[11px] font-medium block">Rejected / No Show</span>
-          <span className="text-xl font-bold text-red-700 font-mono">{rejectedCount}</span>
-        </div>
-      </div>
+      <KPIStats 
+        candidatesCount={totalCount} 
+        activeOffersCount={offers.filter(o => o.isAvailable).length}
+        hiredCount={candidates.filter(c => c.status === 'accepted' || c.status === 'hired').length}
+      />
 
       {/* Sub Tabs Navigation */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
@@ -343,62 +371,84 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }`}
         >
           <Users className="w-4 h-4" />
-          Candidates Pipeline ({candidates.length})
+          Candidates Pipeline
+        </button>
+        <button
+          onClick={() => onSubTabChange('kanban')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+            activeSubTab === 'kanban'
+              ? 'bg-slate-900 dark:bg-white dark:text-slate-900 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Calendar className="w-4 h-4" />
+          Kanban Board
+        </button>
+        <button
+          onClick={() => onSubTabChange('calendar')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+            activeSubTab === 'calendar'
+              ? 'bg-slate-900 dark:bg-white dark:text-slate-900 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Calendar className="w-4 h-4 text-red-500" />
+          <span>التقويم (Calendar)</span>
+        </button>
+        <button
+          onClick={() => onSubTabChange('hierarchy')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+            activeSubTab === 'hierarchy'
+              ? 'bg-slate-900 dark:bg-white dark:text-slate-900 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4" />
+          Org Chart
         </button>
         <button
           onClick={() => onSubTabChange('offers')}
           className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
             activeSubTab === 'offers'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              ? 'bg-slate-900 dark:bg-white dark:text-slate-900 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
           <Building2 className="w-4 h-4" />
-          Company Offers & Slots ({offers.length})
-        </button>
-        <button
-          onClick={() => onSubTabChange('all-offers')}
-          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
-            activeSubTab === 'all-offers'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Share2 className="w-4 h-4" />
-          All Offers View ({offers.length})
+          Offers ({offers.length})
         </button>
         <button
           onClick={() => onSubTabChange('recruiters')}
           className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
             activeSubTab === 'recruiters'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              ? 'bg-slate-900 dark:bg-white dark:text-slate-900 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
           <UserCheck className="w-4 h-4" />
-          Recruiters Team ({recruiters.length})
+          Recruiters ({recruiters.length})
         </button>
         <button
           onClick={() => onSubTabChange('statuses')}
           className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
             activeSubTab === 'statuses'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              ? 'bg-slate-900 dark:bg-white dark:text-slate-900 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
           <Tag className="w-4 h-4" />
-          Feedback Pipeline ({statuses.length})
+          Pipeline Config
         </button>
         <button
           onClick={() => onSubTabChange('leaderboard')}
           className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
             activeSubTab === 'leaderboard'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              ? 'bg-slate-900 dark:bg-white dark:text-slate-900 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
           <Trophy className="w-4 h-4 text-amber-500" />
-          Leaderboard ( Rankings )
+          Rankings
         </button>
         {onNavigateTab && (
           <button
@@ -413,326 +463,64 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Tab 1: Candidates Management */}
       {activeSubTab === 'candidates' && (
-        <div className="space-y-4">
-          {/* Controls Bar: Search + Filters + CSV Export */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            {/* Search Input */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search candidate name, phone, residence, or code..."
-                className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 bg-white text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500"
-              />
-            </div>
+        <CandidatesTable 
+          candidates={candidates}
+          statuses={statuses}
+          isManagementView={true}
+          recruiters={recruiters}
+          selectedIds={selectedIds}
+          onToggleCandidate={(id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])}
+          onToggleAll={() => setSelectedIds(selectedIds.length === candidates.length ? [] : candidates.map(c => c.id))}
+          onUpdateStatus={onUpdateStatus}
+          onBulkUpdateStatus={(ids, status) => {
+            ids.forEach(id => onUpdateStatus(id, status));
+            setSelectedIds([]);
+          }}
+          onBulkDelete={(ids) => {
+            ids.forEach(id => onDeleteApplication(id));
+            setSelectedIds([]);
+          }}
+          setSelectedCandidateForAudio={setSelectedCandidateForAudio}
+          setSelectedCandidateForStatusChange={setSelectedCandidateForStatus}
+          setSelectedCandidateForHistory={setSelectedCandidateForHistory}
+          currentUser={currentUser}
+        />
+      )}
 
-            {/* View Mode & Export */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={exportToExcel}
-                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
-                title="Export filtered candidates to Excel (.xlsx)"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export Excel</span>
-              </button>
-              <button
-                onClick={exportToCSV}
-                className="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors"
-                title="Export filtered candidates to CSV"
-              >
-                <Download className="w-3.5 h-3.5 text-slate-500" />
-                <span>Export CSV</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Filters Bar */}
-          <div className="p-3 bg-white rounded-xl border border-slate-200 flex flex-wrap items-center gap-3 text-xs">
-            <span className="font-semibold text-slate-500 flex items-center gap-1">
-              <Filter className="w-3.5 h-3.5" />
-              Filter By:
-            </span>
-
-            {/* Status Filter */}
-            <select
-              value={selectedStatusFilter}
-              onChange={(e) => setSelectedStatusFilter(e.target.value)}
-              className="p-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-medium"
-            >
-              <option value="ALL">All Statuses ({totalCount})</option>
-              {statuses.map((st) => (
-                <option key={st.id} value={st.key}>
-                  {st.labelEn || st.labelAr} ({candidates.filter((c) => c.status === st.key).length})
-                </option>
-              ))}
-            </select>
-
-            {/* Company Filter */}
-            <select
-              value={selectedCompanyFilter}
-              onChange={(e) => setSelectedCompanyFilter(e.target.value)}
-              className="p-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-medium"
-            >
-              <option value="ALL">All Companies</option>
-              {offers.map((off) => (
-                <option key={off.id} value={off.id}>
-                  {off.companyName}
-                </option>
-              ))}
-            </select>
-
-            {/* Recruiter Filter */}
-            <select
-              value={selectedRecruiterFilter}
-              onChange={(e) => setSelectedRecruiterFilter(e.target.value)}
-              className="p-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-medium"
-            >
-              <option value="ALL">All Recruiters</option>
-              {recruiters.map((rec) => (
-                <option key={rec.id} value={rec.id}>
-                  {rec.fullName} ({rec.referralCode})
-                </option>
-              ))}
-            </select>
-
-            {(searchQuery || selectedStatusFilter !== 'ALL' || selectedCompanyFilter !== 'ALL' || selectedRecruiterFilter !== 'ALL') && (
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setSelectedStatusFilter('ALL');
-                  setSelectedCompanyFilter('ALL');
-                  setSelectedRecruiterFilter('ALL');
-                }}
-                className="text-red-600 hover:text-red-700 text-xs font-semibold underline"
-              >
-                Reset Filters
-              </button>
-            )}
-          </div>
-
-          {/* Table Container */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold">
-                    <th className="py-3 px-4">Candidate</th>
-                    <th className="py-3 px-4">Company & Role</th>
-                    <th className="py-3 px-4">Assigned Recruiter</th>
-                    <th className="py-3 px-4">Voice Note</th>
-                    <th className="py-3 px-4">Selected Interview Slot</th>
-                    <th className="py-3 px-4">Status & Feedback</th>
-                    <th className="py-3 px-4 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredCandidates.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-12 text-center text-slate-400">
-                        No candidates found matching the selected filters. Share referral links to start receiving applications!
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredCandidates.map((cand) => (
-                      <tr key={cand.id} className="hover:bg-slate-50/60 transition-colors">
-                        {/* Candidate */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-bold text-slate-900 text-xs">{cand.fullName}</div>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
-                            <span className="font-mono text-slate-600">{cand.phone}</span>
-                            <span>·</span>
-                            <span>{cand.residence}</span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
-                            <span className="font-mono text-red-600 font-semibold">{cand.referenceCode}</span>
-                            <span>·</span>
-                            <span>{cand.graduationStatus === 'graduated' ? 'Graduated' : 'Student'}</span>
-                            <span>·</span>
-                            <span className="inline-flex items-center px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded font-medium">
-                              Exp: {cand.experienceLevel || 'Fresh'}
-                            </span>
-                            {cand.experienceDetails && (
-                              <span className="text-slate-500 max-w-[150px] truncate" title={cand.experienceDetails}>
-                                ({cand.experienceDetails})
-                              </span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Company & Role */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-semibold text-slate-800">{cand.companyName}</div>
-                          <div className="text-[11px] text-slate-500 mt-0.5 truncate max-w-[200px]">
-                            {cand.offerTitle}
-                          </div>
-                        </td>
-
-                        {/* Recruiter */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-medium text-slate-800">{cand.recruiterName}</div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] font-mono text-slate-400">@{cand.recruiterCode}</span>
-                            {(() => {
-                              const rec = recruiters.find(r => r.id === cand.recruiterId);
-                              if (rec && !rec.teamLeaderId && !rec.unitManagerId && rec.role === 'recruiter') {
-                                return (
-                                  <span className="text-[9px] bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded font-bold">
-                                    Indirect Team (CEO)
-                                  </span>
-                                );
-                              }
-                              return null;
-                            })()}
-                          </div>
-                        </td>
-
-                        {/* Voice Note */}
-                        <td className="py-3.5 px-4">
-                          <div className="flex flex-col gap-1.5">
-                            <button
-                              onClick={() => setSelectedCandidateForAudio(cand)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-md font-medium transition-colors text-[10px]"
-                            >
-                              <Volume2 className="w-3 h-3" />
-                              <span>Audio 1 (English)</span>
-                            </button>
-                            {cand.vocarooUrl2 && (
-                              <button
-                                onClick={() => setSelectedCandidateForAudio({ ...cand, vocarooUrl: cand.vocarooUrl2! })}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-medium transition-colors text-[10px]"
-                              >
-                                <Volume2 className="w-3 h-3" />
-                                <span>Audio 2 (Second Lang)</span>
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Interview Slot */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-medium text-slate-800 text-[11px]">
-                            {cand.interviewSlotDetails}
-                          </div>
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                            Form Date: {new Date(cand.createdAt).toLocaleString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                              hour12: true
-                            })}
-                          </div>
-                        </td>
-
-                        {/* Status & Feedback Notes */}
-                        <td className="py-3.5 px-4 max-w-[240px]">
-                          <div>
-                            <StatusBadge status={cand.status} statuses={statuses} size="sm" />
-                          </div>
-                          {cand.status === 'Upcoming Interview' && cand.scheduledDate && (
-                            <div className="text-[10px] font-bold text-blue-700 mt-1.5 flex flex-wrap items-center justify-between gap-1.5 bg-blue-50/90 p-2 rounded-lg border border-blue-200">
-                              <div className="flex items-center gap-1">
-                                <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                                <span>
-                                  Scheduled: {new Date(cand.scheduledDate).toLocaleString('en-US', {
-                                    weekday: 'short',
-                                    month: 'short',
-                                    day: 'numeric',
-                                    hour: 'numeric',
-                                    minute: '2-digit',
-                                    hour12: true
-                                  })}
-                                </span>
-                              </div>
-                              {(() => {
-                                const startDate = new Date(cand.scheduledDate);
-                                if (isNaN(startDate.getTime())) return null;
-                                const endDate = new Date(startDate.getTime() + 45 * 60 * 1000);
-                                const formatIso = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, '');
-                                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('Interview: ' + cand.fullName + ' (' + cand.companyName + ')')}&details=${encodeURIComponent('Candidate: ' + cand.fullName + '\nPhone: ' + cand.phone + '\nRef: ' + cand.referenceCode + '\nCompany: ' + cand.companyName + '\nRole: ' + cand.offerTitle + '\nRecruiter: ' + cand.recruiterName)}&dates=${formatIso(startDate)}/${formatIso(endDate)}`;
-                                return (
-                                  <a
-                                    href={gCalUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-bold transition-all shadow-2xs shrink-0"
-                                    title="Add interview to Google Calendar"
-                                  >
-                                    <Calendar className="w-2.5 h-2.5" />
-                                    <span>Sync Calendar</span>
-                                  </a>
-                                );
-                              })()}
-                            </div>
-                          )}
-                          {cand.feedbackNotes && (
-                            <div className="text-[11px] text-slate-600 italic mt-1 line-clamp-2 bg-slate-50 p-1.5 rounded border border-slate-200/50">
-                              "{cand.feedbackNotes}"
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="py-3.5 px-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {/* Edit Data */}
-                            <button
-                              onClick={() => setSelectedCandidateForEdit(cand)}
-                              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-colors"
-                              title="Edit candidate data"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Change Status Button */}
-                            <button
-                              onClick={() => setSelectedCandidateForStatus(cand)}
-                              className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-md text-[11px] font-bold transition-colors shadow-2xs"
-                              title="Update status & give live feedback to recruiter"
-                            >
-                              Update Status
-                            </button>
-
-                            {/* WhatsApp quick chat */}
-                            <a
-                              href={`https://wa.me/2${cand.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
-                                `Hello ${cand.fullName}, regarding your application for ${cand.companyName} through REDZ Agency...`
-                              )}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-md transition-colors"
-                              title="Chat on WhatsApp"
-                            >
-                              <MessageSquare className="w-3.5 h-3.5" />
-                            </a>
-
-                            {/* Delete */}
-                            <button
-                              onClick={() => {
-                                if (confirm(`Are you sure you want to delete candidate application "${cand.fullName}"?`)) {
-                                  onDeleteApplication(cand.id);
-                                }
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                              title="Delete candidate"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      {/* Tab: Kanban Board */}
+      {activeSubTab === 'kanban' && (
+        <div className="bg-white dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden h-[calc(100vh-350px)]">
+          <CandidateKanban 
+            candidates={candidates}
+            statuses={statuses}
+            onStatusChange={onUpdateStatus}
+          />
         </div>
       )}
+
+      {/* Tab: Interview Calendar */}
+      {activeSubTab === 'calendar' && (
+        <InterviewCalendar
+          candidates={candidates}
+          offers={offers}
+          recruiters={recruiters}
+          currentUser={currentUser}
+          statuses={statuses}
+          onSelectCandidateForAudio={setSelectedCandidateForAudio}
+          onSelectCandidateForStatus={setSelectedCandidateForStatus}
+        />
+      )}
+
+      {/* Tab: Org Chart */}
+      {activeSubTab === 'hierarchy' && (
+        <div className="bg-white dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <TeamHierarchy 
+            users={recruiters}
+            candidates={candidates}
+          />
+        </div>
+      )}
+
 
       {/* Tab 2: Offers & Interview Schedules Management */}
       {activeSubTab === 'offers' && (() => {
@@ -997,6 +785,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       setEditingOffer(o);
                       setIsOfferModalOpen(true);
                     }}
+                    onStatusToggle={(o) => onSaveOffer(o as any)}
                     onDeleteOffer={(id) => onDeleteOffer(id)}
                     isAdmin={true}
                   />
@@ -1072,6 +861,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     setEditingOffer(o);
                     setIsOfferModalOpen(true);
                   }}
+                  onStatusToggle={(o) => onSaveOffer(o as any)}
                   onDeleteOffer={(id) => onDeleteOffer(id)}
                   isAdmin={true}
                 />
@@ -1326,6 +1116,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         vocarooUrl={selectedCandidateForAudio?.vocarooUrl || ''}
         candidateName={selectedCandidateForAudio?.fullName || ''}
         companyName={selectedCandidateForAudio?.companyName || ''}
+        candidateId={selectedCandidateForAudio?.id}
+        experienceDetails={selectedCandidateForAudio?.experienceDetails}
+        initialEvaluation={selectedCandidateForAudio?.aiEvaluation}
+        onUpdateEvaluation={(evalData) => {
+          if (selectedCandidateForAudio) {
+            if (onUpdateCandidateDetails) {
+              onUpdateCandidateDetails(selectedCandidateForAudio.id, { aiEvaluation: evalData });
+            } else {
+              updateApplicationDetails(selectedCandidateForAudio.id, { aiEvaluation: evalData });
+            }
+          }
+        }}
         showAdminActions={true}
         onAcceptVoice={() => {
           if (selectedCandidateForAudio) {
@@ -1370,6 +1172,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         onClose={() => setIsRecruiterModalOpen(false)}
         recruiterToEdit={editingRecruiter}
         allUsers={recruiters}
+        currentUser={currentUser}
         onSave={onSaveRecruiter}
       />
 
@@ -1415,6 +1218,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             await onUpdateCandidateDetails(selectedCandidateForEdit.id, updatedFields);
           }
         }}
+      />
+
+      <BroadcastModal
+        isOpen={isBroadcastModalOpen}
+        onClose={() => setIsBroadcastModalOpen(false)}
+        onSendBroadcast={handleSendBroadcast}
+      />
+
+      <DailyWhatsAppReportModal
+        isOpen={isWhatsAppReportModalOpen}
+        onClose={() => setIsWhatsAppReportModalOpen(false)}
+        candidates={candidates}
+        offers={offers}
+        recruiters={recruiters}
+        currentUser={currentUser}
+      />
+
+      <StatusHistoryModal
+        isOpen={Boolean(selectedCandidateForHistory)}
+        onClose={() => setSelectedCandidateForHistory(null)}
+        candidate={selectedCandidateForHistory}
+        statuses={statuses}
       />
     </div>
   );

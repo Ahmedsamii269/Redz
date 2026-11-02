@@ -35,7 +35,10 @@ import { CommissionTab } from './components/CommissionTab';
 import { LoginModal } from './components/LoginModal';
 import { RedzLogo } from './components/RedzLogo';
 import { WelcomeToast } from './components/WelcomeToast';
+import { ToastContainer } from './components/ToastContainer';
 import { Leaderboard } from './components/Leaderboard';
+import { ExecutiveAnalytics } from './components/ExecutiveAnalytics';
+
 import { logout as fbLogout } from './lib/firebase';
 import { ExternalLink, RefreshCw, Eye, Sparkles, Trophy } from 'lucide-react';
 
@@ -50,7 +53,7 @@ export default function App() {
 
   // Navigation
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
-  const [adminSubTab, setAdminSubTab] = useState<'candidates' | 'offers' | 'all-offers' | 'recruiters' | 'statuses' | 'leaderboard'>('candidates');
+  const [adminSubTab, setAdminSubTab] = useState<'candidates' | 'offers' | 'all-offers' | 'recruiters' | 'statuses' | 'leaderboard' | 'kanban' | 'hierarchy' | 'calendar'>('candidates');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   const [showWelcomeToast, setShowWelcomeToast] = useState<boolean>(false);
 
@@ -124,7 +127,7 @@ export default function App() {
       if (currentUser?.role === 'admin') {
         setNotifications(allNotifs);
       } else {
-        setNotifications(allNotifs.filter(n => !n.targetUserId || n.targetUserId === currentUser?.id));
+        setNotifications(allNotifs.filter(n => !n.targetUserId || n.targetUserId === 'all' || n.targetUserId === currentUser?.id));
       }
     });
     
@@ -183,7 +186,7 @@ export default function App() {
   const isAdmin = currentUser?.role === 'admin';
 
   return (
-    <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans" dir="ltr">
+    <div className="min-h-screen bg-slate-100/70 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-300" dir="ltr">
       {/* Top Bar Navigation */}
       <Navbar
         currentUser={currentUser}
@@ -255,6 +258,13 @@ export default function App() {
             candidates={applications} 
             recruiters={recruiters} 
             isMonthly={true} 
+          />
+        ) : currentTab === 'analytics' ? (
+          <ExecutiveAnalytics
+            candidates={applications}
+            offers={offers}
+            recruiters={recruiters}
+            statuses={statuses}
           />
         ) : isAdmin ? (
           <AdminDashboard
@@ -357,6 +367,9 @@ export default function App() {
           onClose={() => setShowWelcomeToast(false)} 
         />
       )}
+
+      {/* Persistent Global Cloud Sync Toast Service */}
+      <ToastContainer />
     </div>
   );
 }

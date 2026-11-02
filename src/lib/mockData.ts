@@ -124,6 +124,7 @@ export const INITIAL_RECRUITERS: User[] = [
     phone: '01012345678',
     referralCode: 'ceo_ahmed',
     active: true,
+    allowGoogleLogin: true,
     createdAt: new Date().toISOString(),
   },
   {
@@ -136,6 +137,7 @@ export const INITIAL_RECRUITERS: User[] = [
     phone: '01011223344',
     referralCode: 'um_cairo',
     active: true,
+    allowGoogleLogin: true,
     createdAt: new Date().toISOString(),
   },
   {
@@ -150,6 +152,7 @@ export const INITIAL_RECRUITERS: User[] = [
     unitManagerId: 'um-cairo-1',
     unitManagerName: 'Unit Manager (Cairo Operations)',
     active: true,
+    allowGoogleLogin: true,
     createdAt: new Date().toISOString(),
   },
   {
@@ -162,6 +165,7 @@ export const INITIAL_RECRUITERS: User[] = [
     phone: '01099887766',
     referralCode: 'am_cairo',
     active: true,
+    allowGoogleLogin: true,
     createdAt: new Date().toISOString(),
   },
   {
@@ -174,6 +178,7 @@ export const INITIAL_RECRUITERS: User[] = [
     phone: '01122334455',
     referralCode: 'am_giza',
     active: true,
+    allowGoogleLogin: true,
     createdAt: new Date().toISOString(),
   },
   {
@@ -190,6 +195,7 @@ export const INITIAL_RECRUITERS: User[] = [
     unitManagerId: 'um-cairo-1',
     unitManagerName: 'Unit Manager (Cairo Operations)',
     active: true,
+    allowGoogleLogin: true,
     createdAt: new Date().toISOString(),
   },
 ];
@@ -241,6 +247,52 @@ export const INITIAL_OFFERS: CompanyOffer[] = [
     },
     isAvailable: true,
     notes: 'Transportation provided to key gathering points.',
+    createdAt: '2026-10-27T10:00:00Z',
+  },
+  {
+    id: 'offer-tp-french',
+    title: 'Customer Service Representative (French Account)',
+    companyName: 'Teleperformance - French',
+    industry: 'BPO & Call Center',
+    location: 'Teleperformance Egypt - Cairo - One Kattameya',
+    workType: 'On-site',
+    salaryPackage: '22,000 EGP Net',
+    workingHours: '10:00 AM to 5:00 PM',
+    requirements: ['Fluent French speakers', 'Graduates only'],
+    interviewSlots: [
+      { id: 'slot-tp-fr-1', day: 'Sunday to Thursday', time: '10:00 AM – 5:00 PM', mode: 'In-Person' },
+    ],
+    schedulingRules: {
+      allowedDays: [0, 1, 2, 3, 4],
+      startTime: '10:00',
+      endTime: '17:00',
+      mode: 'In-Person',
+    },
+    isAvailable: true,
+    notes: 'Teleperformance Cairo - One Kattameya',
+    createdAt: '2026-10-27T10:00:00Z',
+  },
+  {
+    id: 'offer-total-trip',
+    title: 'Customer Support Representative',
+    companyName: 'Total Trip',
+    industry: 'Travel & Tourism',
+    location: 'Masaken Sheraton – Heliopolis, Cairo',
+    workType: 'On-site',
+    salaryPackage: '15,000 EGP Net',
+    workingHours: '2:00 PM – 3:00 PM Slot',
+    requirements: ['Good English', 'Graduates and undergraduates'],
+    interviewSlots: [
+      { id: 'slot-tt-1', day: 'Sunday to Thursday', time: '2:00 PM – 3:00 PM', mode: 'In-Person' },
+    ],
+    schedulingRules: {
+      allowedDays: [0, 1, 2, 3, 4],
+      startTime: '14:00',
+      endTime: '15:00',
+      mode: 'In-Person',
+    },
+    isAvailable: true,
+    notes: 'Unit 2, Building 6, Square 1183, Masaken Sheraton – Heliopolis',
     createdAt: '2026-10-27T10:00:00Z',
   },
   // 3. eClerx

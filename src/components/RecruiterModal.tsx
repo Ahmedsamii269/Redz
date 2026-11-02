@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, UserCheck, Key, Shield, User as UserIcon, Phone, Mail, Link as LinkIcon, Users } from 'lucide-react';
 import { User, UserRole } from '../types';
+import { getAllowedRolesToCreate, getAddMemberButtonLabel } from '../lib/permissions';
 
 interface RecruiterModalProps {
   isOpen: boolean;
   onClose: () => void;
   recruiterToEdit?: User | null;
   allUsers?: User[];
+  currentUser?: User | null;
   onSave: (recruiterData: Partial<User> & { fullName: string; username: string }) => void;
 }
 
@@ -15,9 +17,11 @@ export const RecruiterModal: React.FC<RecruiterModalProps> = ({
   onClose,
   recruiterToEdit,
   allUsers = [],
+  currentUser,
   onSave,
 }) => {
-  if (!isOpen) return null;
+  const allowedRoles = getAllowedRolesToCreate(currentUser?.role);
+  const defaultRole = recruiterToEdit?.role || (allowedRoles.length > 0 ? allowedRoles[0] : 'recruiter');
 
   const [fullName, setFullName] = useState(recruiterToEdit?.fullName || '');
   const [username, setUsername] = useState(recruiterToEdit?.username || '');
@@ -25,17 +29,83 @@ export const RecruiterModal: React.FC<RecruiterModalProps> = ({
   const [email, setEmail] = useState(recruiterToEdit?.email || '');
   const [phone, setPhone] = useState(recruiterToEdit?.phone || '010');
   const [referralCode, setReferralCode] = useState(recruiterToEdit?.referralCode || '');
-  const [role, setRole] = useState<UserRole>(recruiterToEdit?.role || 'recruiter');
+  const [role, setRole] = useState<UserRole>(defaultRole);
   const [active, setActive] = useState(recruiterToEdit ? recruiterToEdit.active : true);
   const [allowGoogleLogin, setAllowGoogleLogin] = useState(recruiterToEdit?.allowGoogleLogin || false);
 
-  const [teamLeaderId, setTeamLeaderId] = useState<string>(recruiterToEdit?.teamLeaderId || '');
-  const [unitManagerId, setUnitManagerId] = useState<string>(recruiterToEdit?.unitManagerId || '');
-  const [accountManagerId, setAccountManagerId] = useState<string>(recruiterToEdit?.accountManagerId || '');
+  // Default hierarchy fields based on current user's role
+  const initialTLId = recruiterToEdit?.teamLeaderId || (currentUser?.role === 'team_leader' ? currentUser.id : '');
+  const initialUMId = recruiterToEdit?.unitManagerId || (currentUser?.role === 'unit_manager' ? currentUser.id : (currentUser?.unitManagerId || ''));
+  const initialAMId = recruiterToEdit?.accountManagerId || (currentUser?.role === 'account_manager' ? currentUser.id : (currentUser?.accountManagerId || ''));
 
-  const availableTeamLeaders = allUsers.filter((u) => u.role === 'team_leader' && u.id !== recruiterToEdit?.id);
-  const availableUnitManagers = allUsers.filter((u) => u.role === 'unit_manager' && u.id !== recruiterToEdit?.id);
+  const [teamLeaderId, setTeamLeaderId] = useState<string>(initialTLId);
+  const [unitManagerId, setUnitManagerId] = useState<string>(initialUMId);
+  const [accountManagerId, setAccountManagerId] = useState<string>(initialAMId);
+
+  useEffect(() => {
+    if (recruiterToEdit) {
+      setFullName(recruiterToEdit.fullName || '');
+      setUsername(recruiterToEdit.username || '');
+      setPassword(recruiterToEdit.password || '123456');
+      setEmail(recruiterToEdit.email || '');
+      setPhone(recruiterToEdit.phone || '010');
+      setReferralCode(recruiterToEdit.referralCode || '');
+      setRole(recruiterToEdit.role || defaultRole);
+      setActive(recruiterToEdit.active !== false);
+      setAllowGoogleLogin(recruiterToEdit.allowGoogleLogin || false);
+      setTeamLeaderId(recruiterToEdit.teamLeaderId || '');
+      setUnitManagerId(recruiterToEdit.unitManagerId || '');
+      setAccountManagerId(recruiterToEdit.accountManagerId || '');
+    } else {
+      setFullName('');
+      setUsername('');
+      setPassword('123456');
+      setEmail('');
+      setPhone('010');
+      setReferralCode('');
+      setRole(defaultRole);
+      setActive(true);
+      setAllowGoogleLogin(false);
+      setTeamLeaderId(currentUser?.role === 'team_leader' ? currentUser.id : '');
+      setUnitManagerId(currentUser?.role === 'unit_manager' ? currentUser.id : (currentUser?.unitManagerId || ''));
+      setAccountManagerId(currentUser?.role === 'account_manager' ? currentUser.id : (currentUser?.accountManagerId || ''));
+    }
+  }, [recruiterToEdit, defaultRole, currentUser?.id, currentUser?.role]);
+
+  if (!isOpen) return null;
+
+  const availableTeamLeaders = allUsers.filter((u) => {
+    if (u.role !== 'team_leader' || u.id === recruiterToEdit?.id) return false;
+    if (currentUser?.role === 'unit_manager') {
+      return u.unitManagerId === currentUser.id || u.id === currentUser.id;
+    }
+    if (currentUser?.role === 'account_manager') {
+      return u.accountManagerId === currentUser.id || u.id === currentUser.id;
+    }
+    return true;
+  });
+
+  const availableUnitManagers = allUsers.filter((u) => {
+    if (u.role !== 'unit_manager' || u.id === recruiterToEdit?.id) return false;
+    if (currentUser?.role === 'account_manager') {
+      return u.accountManagerId === currentUser.id || u.id === currentUser.id;
+    }
+    return true;
+  });
+
   const availableAccountManagers = allUsers.filter((u) => u.role === 'account_manager' && u.id !== recruiterToEdit?.id);
+
+  const roleOptions: { value: UserRole; label: string }[] = ([
+    { value: 'recruiter' as UserRole, label: 'Recruiter' },
+    { value: 'team_leader' as UserRole, label: 'Team Leader 👥' },
+    { value: 'unit_manager' as UserRole, label: 'Unit Manager 🏢' },
+    { value: 'account_manager' as UserRole, label: 'Account Manager' },
+    { value: 'admin' as UserRole, label: 'Admin / CEO' },
+  ] as { value: UserRole; label: string }[]).filter((r) => {
+    if (!currentUser || currentUser.role === 'admin') return true;
+    if (recruiterToEdit && recruiterToEdit.role === r.value) return true;
+    return (allowedRoles as string[]).includes(r.value as string);
+  });
 
   const handleTeamLeaderChange = (tlId: string) => {
     setTeamLeaderId(tlId);
@@ -51,9 +121,17 @@ export const RecruiterModal: React.FC<RecruiterModalProps> = ({
     e.preventDefault();
     if (!fullName.trim() || !username.trim()) return;
 
-    const selectedTL = availableTeamLeaders.find((tl) => tl.id === teamLeaderId);
-    const selectedUM = availableUnitManagers.find((um) => um.id === unitManagerId);
-    const selectedAM = availableAccountManagers.find((am) => am.id === accountManagerId);
+    const selectedTL = allUsers.find((u) => u.id === teamLeaderId) || (currentUser?.id === teamLeaderId ? currentUser : undefined);
+    const selectedUM = allUsers.find((u) => u.id === unitManagerId) || (currentUser?.id === unitManagerId ? currentUser : undefined);
+    const selectedAM = allUsers.find((u) => u.id === accountManagerId) || (currentUser?.id === accountManagerId ? currentUser : undefined);
+
+    const finalTLId = role === 'recruiter' ? (teamLeaderId || (currentUser?.role === 'team_leader' ? currentUser.id : undefined)) : undefined;
+    const finalUMId = (role === 'recruiter' || role === 'team_leader') ? (unitManagerId || (currentUser?.role === 'unit_manager' ? currentUser.id : currentUser?.unitManagerId)) : undefined;
+    const finalAMId = (role === 'recruiter' || role === 'team_leader' || role === 'unit_manager') ? (accountManagerId || (currentUser?.role === 'account_manager' ? currentUser.id : currentUser?.accountManagerId)) : undefined;
+
+    const finalTLName = role === 'recruiter' ? (selectedTL?.fullName || (currentUser?.role === 'team_leader' ? currentUser.fullName : undefined)) : undefined;
+    const finalUMName = (role === 'recruiter' || role === 'team_leader') ? (selectedUM?.fullName || (currentUser?.role === 'unit_manager' ? currentUser.fullName : currentUser?.unitManagerName)) : undefined;
+    const finalAMName = (role === 'recruiter' || role === 'team_leader' || role === 'unit_manager') ? (selectedAM?.fullName || (currentUser?.role === 'account_manager' ? currentUser.fullName : currentUser?.accountManagerName)) : undefined;
 
     onSave({
       id: recruiterToEdit?.id,
@@ -66,12 +144,12 @@ export const RecruiterModal: React.FC<RecruiterModalProps> = ({
       role,
       active,
       allowGoogleLogin,
-      teamLeaderId: role === 'recruiter' ? teamLeaderId || undefined : undefined,
-      teamLeaderName: role === 'recruiter' && selectedTL ? selectedTL.fullName : undefined,
-      unitManagerId: (role === 'recruiter' || role === 'team_leader') ? unitManagerId || undefined : undefined,
-      unitManagerName: (role === 'recruiter' || role === 'team_leader') && selectedUM ? selectedUM.fullName : undefined,
-      accountManagerId: (role === 'recruiter' || role === 'team_leader' || role === 'unit_manager') ? accountManagerId || undefined : undefined,
-      accountManagerName: (role === 'recruiter' || role === 'team_leader' || role === 'unit_manager') && selectedAM ? selectedAM.fullName : undefined,
+      teamLeaderId: finalTLId,
+      teamLeaderName: finalTLName,
+      unitManagerId: finalUMId,
+      unitManagerName: finalUMName,
+      accountManagerId: finalAMId,
+      accountManagerName: finalAMName,
     });
     onClose();
   };
@@ -200,11 +278,11 @@ export const RecruiterModal: React.FC<RecruiterModalProps> = ({
                 onChange={(e) => setRole(e.target.value as UserRole)}
                 className="w-full p-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white font-medium"
               >
-                <option value="recruiter">Recruiter</option>
-                <option value="team_leader">Team Leader 👥</option>
-                <option value="unit_manager">Unit Manager 🏢</option>
-                <option value="account_manager">Account Manager</option>
-                <option value="admin">Admin / CEO</option>
+                {roleOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div>

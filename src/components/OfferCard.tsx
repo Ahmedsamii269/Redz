@@ -29,6 +29,7 @@ interface OfferCardProps {
   onOpenReferralModal: (offer: CompanyOffer) => void;
   onOpenCandidateView: (offerId: string, recruiterCode: string) => void;
   onEditOffer?: (offer: CompanyOffer) => void;
+  onStatusToggle?: (offer: CompanyOffer) => void;
   onDeleteOffer?: (offerId: string) => void;
   isAdmin?: boolean;
 }
@@ -41,6 +42,7 @@ export const OfferCard: React.FC<OfferCardProps> = ({
   onOpenReferralModal,
   onOpenCandidateView,
   onEditOffer,
+  onStatusToggle,
   onDeleteOffer,
   isAdmin = false,
 }) => {
@@ -116,15 +118,28 @@ export const OfferCard: React.FC<OfferCardProps> = ({
                   <h3 className="font-extrabold text-slate-900 text-sm tracking-tight">
                     {offer.companyName}
                   </h3>
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                      offer.isAvailable
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : 'bg-slate-100 text-slate-500 border-slate-200'
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if ((isAdmin || currentUser.role === 'account_manager') && onStatusToggle) {
+                        const next = (offer.offerStatus || 'Active') === 'Active' ? 'Hold' : 'Active';
+                        onStatusToggle({ ...offer, offerStatus: next });
+                      }
+                    }}
+                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 shadow-2xs transition-all ${
+                      (isAdmin || currentUser.role === 'account_manager') ? 'cursor-pointer hover:opacity-80' : ''
+                    } ${
+                      (offer.offerStatus || 'Active') === 'Active'
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        : 'bg-red-100 text-red-800 border-red-300'
                     }`}
+                    title={(isAdmin || currentUser.role === 'account_manager') ? 'Click to instantly toggle Active / Hold' : ''}
                   >
-                    {offer.isAvailable ? '● Hiring Active' : '○ On Hold'}
-                  </span>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      (offer.offerStatus || 'Active') === 'Active' ? 'bg-emerald-600 animate-pulse' : 'bg-red-600'
+                    }`}></span>
+                    <span>{(offer.offerStatus || 'Active') === 'Active' ? 'Active' : 'Hold'}</span>
+                  </button>
                 </div>
                 <h4 className="font-bold text-red-600 text-xs mt-1 leading-snug">
                   {offer.title}

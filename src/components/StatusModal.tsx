@@ -24,11 +24,11 @@ const PRESET_COLORS = [
 ];
 
 export const StatusModal: React.FC<StatusModalProps> = ({ isOpen, onClose, onSave }) => {
-  if (!isOpen) return null;
-
   const [label, setLabel] = useState('');
   const [selectedColor, setSelectedColor] = useState(PRESET_COLORS[0]);
   const [category, setCategory] = useState<'pending' | 'voice' | 'interview' | 'accepted' | 'rejected' | 'training'>('pending');
+
+  if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

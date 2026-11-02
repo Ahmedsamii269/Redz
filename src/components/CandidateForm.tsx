@@ -22,6 +22,84 @@ import { CompanyOffer, User } from '../types';
 import { subscribeToOffers, subscribeToRecruiters, submitApplication, saveOffer, findApplicationByPhone } from '../lib/storage';
 import { parseVocarooUrl } from '../lib/vocaroo';
 import { OfferModal } from './OfferModal';
+import { CloudSyncIndicator } from './CloudSyncIndicator';
+
+const DAY_NAMES_AR = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const DAY_NAMES_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+const getAllowedDayNumbers = (offer: CompanyOffer | null): number[] => {
+  if (!offer) return [0, 1, 2, 3, 4]; // Default Sun-Thu
+  
+  if (offer.schedulingRules?.allowedDays && offer.schedulingRules.allowedDays.length > 0) {
+    return offer.schedulingRules.allowedDays;
+  }
+  
+  if (offer.interviewSlots && Array.isArray(offer.interviewSlots) && offer.interviewSlots.length > 0) {
+    const daysFound = new Set<number>();
+    const dayNameMap: { [key: string]: number } = {
+      sun: 0, sunday: 0, 'الأحد': 0, 'الاحد': 0,
+      mon: 1, monday: 1, 'الإثنين': 1, 'الاثنين': 1,
+      tue: 2, tuesday: 2, 'الثلاثاء': 2,
+      wed: 3, wednesday: 3, 'الأربعاء': 3, 'الاربعاء': 3,
+      thu: 4, thursday: 4, 'الخميس': 4,
+      fri: 5, friday: 5, 'الجمعة': 5,
+      sat: 6, saturday: 6, 'السبت': 6,
+    };
+    
+    offer.interviewSlots.forEach((slot) => {
+      const lower = slot.day.toLowerCase();
+      Object.keys(dayNameMap).forEach((key) => {
+        if (lower.includes(key)) {
+          daysFound.add(dayNameMap[key]);
+        }
+      });
+    });
+    
+    if (daysFound.size > 0) {
+      return Array.from(daysFound);
+    }
+  }
+  
+  return [0, 1, 2, 3, 4]; // Default Sun-Thu
+};
+
+const getNextValidDate = (allowedDays: number[]): string => {
+  const date = new Date();
+  date.setDate(date.getDate() + 1); // Tomorrow
+  
+  for (let i = 0; i < 20; i++) {
+    if (allowedDays.includes(date.getDay())) {
+      return date.toISOString().split('T')[0];
+    }
+    date.setDate(date.getDate() + 1);
+  }
+  
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.toISOString().split('T')[0];
+};
+
+const getUpcomingValidDates = (allowedDays: number[], count = 8) => {
+  const dates: { iso: string; dateObj: Date; dayNameAr: string; dayNameEn: string; formatted: string }[] = [];
+  const date = new Date();
+  date.setDate(date.getDate() + 1); // Tomorrow
+  
+  while (dates.length < count && dates.length < 30) {
+    const dayOfWeek = date.getDay();
+    if (allowedDays.includes(dayOfWeek)) {
+      const iso = date.toISOString().split('T')[0];
+      dates.push({
+        iso,
+        dateObj: new Date(date),
+        dayNameAr: DAY_NAMES_AR[dayOfWeek],
+        dayNameEn: DAY_NAMES_EN[dayOfWeek],
+        formatted: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      });
+    }
+    date.setDate(date.getDate() + 1);
+  }
+  return dates;
+};
 
 interface CandidateFormProps {
   initialOfferId?: string;
@@ -58,7 +136,11 @@ export const CandidateForm: React.FC<CandidateFormProps> = ({
   const [vocarooUrl, setVocarooUrl] = useState('');
   const [vocarooUrl2, setVocarooUrl2] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState('');
-
+  const [customDate, setCustomDate] = useState<string>(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  });
   const [scheduledTime, setScheduledTime] = useState('11:00');
 
   // Submission State
@@ -135,12 +217,23 @@ export const CandidateForm: React.FC<CandidateFormProps> = ({
     (r) => r.referralCode?.toLowerCase() === recruiterCode.toLowerCase() || r.username.toLowerCase() === recruiterCode.toLowerCase()
   );
 
-  // Set default slot when offer changes
+  const allowedDays = getAllowedDayNumbers(currentOffer);
+  const upcomingValidDates = getUpcomingValidDates(allowedDays, 8);
+  const selectedDateObj = customDate ? new Date(`${customDate}T12:00:00`) : null;
+  const isSelectedDateAllowed = selectedDateObj ? allowedDays.includes(selectedDateObj.getDay()) : true;
+
+  // Auto-set default valid slot and customDate when offer changes
   useEffect(() => {
-    if (currentOffer && currentOffer.interviewSlots && Array.isArray(currentOffer.interviewSlots) && currentOffer.interviewSlots.length > 0) {
-      setSelectedSlotId(currentOffer.interviewSlots[0].id);
-    } else {
-      setSelectedSlotId('');
+    if (currentOffer) {
+      if (currentOffer.interviewSlots && Array.isArray(currentOffer.interviewSlots) && currentOffer.interviewSlots.length > 0) {
+        setSelectedSlotId(currentOffer.interviewSlots[0].id);
+      } else {
+        setSelectedSlotId('');
+      }
+
+      const validDays = getAllowedDayNumbers(currentOffer);
+      const nextDate = getNextValidDate(validDays);
+      setCustomDate(nextDate);
     }
   }, [selectedOfferId, currentOffer]);
 
@@ -201,8 +294,13 @@ export const CandidateForm: React.FC<CandidateFormProps> = ({
       setFormError('Invalid second Vocaroo link. Please ensure it is a valid URL or leave it empty.');
       return;
     }
-    if (!selectedSlotId && currentOffer.interviewSlots && Array.isArray(currentOffer.interviewSlots) && currentOffer.interviewSlots.length > 0) {
-      setFormError('Please select a suitable interview slot.');
+    if (!customDate) {
+      setFormError('Please select an interview date.');
+      return;
+    }
+    if (!isSelectedDateAllowed) {
+      const allowedNames = allowedDays.map((d) => DAY_NAMES_AR[d]).join(' ، ');
+      setFormError(`التاريخ المحدد لا يوافق أيام المقابلات المتاحة لهذه الشركة (${allowedNames}). يرجى اختيار تاريخ يوافق الأيام المتاحة.`);
       return;
     }
 
@@ -212,16 +310,13 @@ export const CandidateForm: React.FC<CandidateFormProps> = ({
       let slotDetails = 'Flexible / Arranged by HR';
       let scheduledDateISO: string | undefined;
 
-      if (currentOffer.schedulingRules) {
-        // Dynamic scheduling
-        slotDetails = `${selectedSlotId} at ${scheduledTime}`;
-        scheduledDateISO = `${selectedSlotId}T${scheduledTime}:00`;
-      } else {
-        // Static slots
-        const chosenSlot = Array.isArray(currentOffer.interviewSlots) 
-          ? currentOffer.interviewSlots.find((s) => s.id === selectedSlotId)
-          : null;
-        slotDetails = chosenSlot ? `${chosenSlot.day} (${chosenSlot.time})` : 'Flexible / Arranged by HR';
+      if (customDate) {
+        const dt = new Date(`${customDate}T${scheduledTime}:00`);
+        const formattedDateStr = isNaN(dt.getTime())
+          ? `${customDate} at ${scheduledTime}`
+          : `${DAY_NAMES_AR[dt.getDay()]} (${dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}) at ${scheduledTime}`;
+        slotDetails = formattedDateStr;
+        scheduledDateISO = `${customDate}T${scheduledTime}:00`;
       }
 
       const newApp = await submitApplication({
@@ -356,9 +451,12 @@ export const CandidateForm: React.FC<CandidateFormProps> = ({
         {/* Header */}
         <div className="p-6 bg-gradient-to-r from-slate-900 via-slate-800 to-red-950 text-white relative">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-            <span className="text-xs uppercase tracking-wider text-red-300 font-medium">
-              Official Candidate Registration
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wider text-red-300 font-medium">
+                Official Candidate Registration
+              </span>
+              <CloudSyncIndicator />
+            </div>
             {assignedRecruiter && (
               <span className="inline-flex items-center gap-1.5 text-xs bg-red-500/20 text-red-200 border border-red-400/30 px-3 py-1 rounded-full">
                 <UserCheck className="w-3.5 h-3.5" />
@@ -836,126 +934,138 @@ export const CandidateForm: React.FC<CandidateFormProps> = ({
             )}
           </div>
 
-          {/* Section 5: Interview Slots */}
-          <div className="space-y-3 pt-3 border-t border-slate-100">
+          {/* Section 5: Interview Slots & Interactive Calendar */}
+          <div className="space-y-3.5 pt-3 border-t border-slate-100">
             <div>
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-red-600" />
                 5. Available Interview Slots ({currentOffer?.companyName}) *
               </h3>
               <p className="text-slate-500 text-[11px] mt-0.5">
-                Choose the day and time slot that suits you best for the personal interview:
+                Choose the day and time slot that suits you best for the personal interview (اختر يوم وساعة المقابلة المناسبة):
               </p>
             </div>
 
-            {currentOffer?.schedulingRules ? (
-              <div className="p-4 bg-red-50/50 rounded-xl border border-red-100 space-y-4 animate-in fade-in duration-200">
-                <div className="flex items-center gap-2 text-red-900 font-bold mb-2">
-                  <Calendar className="w-4 h-4" />
-                  <span>Schedule your interview for {currentOffer.companyName}</span>
-                </div>
-
-                {/* Day Selection */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-red-800 mb-1.5">
-                    1. Choose available day:
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {(() => {
-                      const dates: Date[] = [];
-                      const today = new Date();
-                      const rules = currentOffer.schedulingRules!;
-                      for (let i = 0; i < 30 && dates.length < 14; i++) {
-                        const d = new Date();
-                        d.setDate(today.getDate() + i);
-                        if (rules.allowedDays.includes(d.getDay())) {
-                          dates.push(new Date(d));
-                        }
-                      }
-                      return dates.map((date) => {
-                        const dateStr = date.toISOString().split('T')[0];
-                        const isSel = selectedSlotId === dateStr;
-                        return (
-                          <button
-                            key={dateStr}
-                            type="button"
-                            onClick={() => setSelectedSlotId(dateStr)}
-                            className={`px-3 py-2 rounded-lg border text-center transition-all ${
-                              isSel
-                                ? 'bg-red-600 text-white border-red-700 font-bold shadow-sm'
-                                : 'bg-white text-slate-700 border-red-200 hover:bg-red-50'
-                            }`}
-                          >
-                            <div className="text-[10px] uppercase font-bold">
-                              {date.toLocaleDateString('en-US', { weekday: 'short' })}
-                            </div>
-                            <div className="text-xs">
-                              {date.getDate()} {date.toLocaleDateString('en-US', { month: 'short' })}
-                            </div>
-                          </button>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-
-                {/* Time Selection - Since it's candidate side, we might want a simple input or buttons */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-red-800 mb-1.5">
-                    2. Approximate time ({currentOffer.schedulingRules.startTime || 'Morning'} – {currentOffer.schedulingRules.endTime || 'Afternoon'}):
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="time"
-                      required
-                      value={scheduledTime}
-                      onChange={(e) => setScheduledTime(e.target.value)}
-                      className="p-2 rounded-lg border border-red-200 text-xs font-mono"
-                    />
-                    <span className="text-[10px] text-red-600">
-                      * HR will confirm the exact time via WhatsApp.
-                    </span>
-                  </div>
-                </div>
+            {/* Allowed Days Banner */}
+            <div className="p-3 bg-red-50/80 rounded-xl border border-red-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="font-semibold text-red-950 flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-red-600 shrink-0" />
+                أيام المقابلات المتاحة لهذه الشركة:
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {allowedDays.map((d) => (
+                  <span key={d} className="px-2.5 py-1 bg-red-600 text-white font-bold text-[11px] rounded-md shadow-2xs">
+                    {DAY_NAMES_AR[d]}
+                  </span>
+                ))}
               </div>
-            ) : currentOffer?.interviewSlots && currentOffer.interviewSlots.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {currentOffer.interviewSlots.map((slot) => {
-                  const isSelected = selectedSlotId === slot.id;
-                  return (
-                    <button
-                      key={slot.id}
-                      type="button"
-                      onClick={() => setSelectedSlotId(slot.id)}
-                      className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between ${
-                        isSelected
-                          ? 'border-red-600 bg-red-50/60 shadow-xs ring-1 ring-red-500/20'
-                          : 'border-slate-200 bg-white hover:bg-slate-50'
-                      }`}
-                    >
-                      <div>
-                        <div className="font-bold text-slate-900 text-xs">{slot.day}</div>
-                        <div className="text-[11px] text-slate-600 font-mono mt-0.5">{slot.time}</div>
-                        <span className="text-[10px] text-red-700 bg-red-100/70 px-1.5 py-0.5 rounded mt-1 inline-block">
-                          {slot.mode || 'In-Person Headquarters'}
-                        </span>
-                      </div>
-                      <div
-                        className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
-                          isSelected ? 'border-red-600 bg-red-600 text-white' : 'border-slate-300 bg-white'
+            </div>
+
+            {/* Upcoming Selectable Valid Dates */}
+            {upcomingValidDates.length > 0 && (
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                  اختر تاريخ المقابلة القادمة المتاحة (Quick Date Selection):
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {upcomingValidDates.map((item) => {
+                    const isSelected = customDate === item.iso;
+                    return (
+                      <button
+                        key={item.iso}
+                        type="button"
+                        onClick={() => setCustomDate(item.iso)}
+                        className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
+                          isSelected
+                            ? 'border-red-600 bg-red-600 text-white shadow-xs font-bold ring-2 ring-red-300'
+                            : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-800'
                         }`}
                       >
-                        {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="p-3 bg-amber-50 rounded-lg text-amber-800 text-xs border border-amber-200">
-                Our HR team will contact you directly via WhatsApp to coordinate the earliest available interview date.
+                        <span className={`text-xs font-bold ${isSelected ? 'text-white' : 'text-slate-900'}`}>
+                          {item.dayNameAr}
+                        </span>
+                        <span className={`text-[11px] font-mono ${isSelected ? 'text-red-100' : 'text-slate-500'}`}>
+                          {item.formatted}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
+
+            {/* Manual Calendar Picker & Time Selector */}
+            <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-200 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Calendar Date Input */}
+                <div>
+                  <label htmlFor="cand-custom-date" className="block text-[11px] font-bold text-slate-700 mb-1">
+                    أو اختر تاريخ آخر من التقويم (Calendar Date):
+                  </label>
+                  <input
+                    id="cand-custom-date"
+                    type="date"
+                    required
+                    min={new Date().toISOString().split('T')[0]}
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    className={`w-full p-2.5 rounded-lg border font-medium text-slate-900 text-xs shadow-2xs focus:ring-2 focus:ring-red-500 ${
+                      !isSelectedDateAllowed
+                        ? 'border-red-500 bg-red-50 text-red-900'
+                        : 'border-slate-300 bg-white'
+                    }`}
+                  />
+                </div>
+
+                {/* Time Selector */}
+                <div>
+                  <label htmlFor="cand-scheduled-time" className="block text-[11px] font-bold text-slate-700 mb-1">
+                    ساعة المقابلة (Interview Time):
+                  </label>
+                  <select
+                    id="cand-scheduled-time"
+                    value={scheduledTime}
+                    onChange={(e) => setScheduledTime(e.target.value)}
+                    className="w-full p-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white font-medium text-slate-900 text-xs shadow-2xs"
+                  >
+                    <option value="10:00">10:00 AM (10 صباحاً)</option>
+                    <option value="11:00">11:00 AM (11 صباحاً)</option>
+                    <option value="12:00">12:00 PM (12 ظهراً)</option>
+                    <option value="13:00">01:00 PM (1 ظهراً)</option>
+                    <option value="14:00">02:00 PM (2 عصراً)</option>
+                    <option value="15:00">03:00 PM (3 عصراً)</option>
+                    <option value="16:00">04:00 PM (4 عصراً)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Invalid Date Warning */}
+              {!isSelectedDateAllowed && (
+                <div className="p-3 bg-red-100 border border-red-300 rounded-lg text-red-900 text-xs flex items-center gap-2 animate-in fade-in duration-200">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>
+                    <strong>تنبيه:</strong> هذا اليوم ({DAY_NAMES_AR[selectedDateObj?.getDay() || 0]}) غير متاح للمقابلات في شركة {currentOffer?.companyName}. الأيام المتاحة فقط هي:{' '}
+                    <strong>{allowedDays.map((d) => DAY_NAMES_AR[d]).join(' ، ')}</strong>.
+                  </span>
+                </div>
+              )}
+
+              {/* Selected Date Summary Badge */}
+              {customDate && isSelectedDateAllowed && (
+                <div className="p-3 bg-white rounded-lg border border-red-200 flex items-center justify-between text-xs">
+                  <span className="text-slate-600 font-medium">الموعد المحدد للمقابلة:</span>
+                  <span className="font-bold text-red-700 font-mono">
+                    {DAY_NAMES_AR[selectedDateObj?.getDay() || 0]} (
+                    {new Date(`${customDate}T${scheduledTime}:00`).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                    ) - الساعة {scheduledTime}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Submit Button */}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Calendar, Building2, MapPin, DollarSign, Clock, Check } from 'lucide-react';
 import { CompanyOffer, InterviewSlot } from '../types';
 
@@ -15,8 +15,6 @@ export const OfferModal: React.FC<OfferModalProps> = ({
   offerToEdit,
   onSave,
 }) => {
-  if (!isOpen) return null;
-
   const [companyName, setCompanyName] = useState(offerToEdit?.companyName || '');
   const [title, setTitle] = useState(offerToEdit?.title || '');
   const [industry, setIndustry] = useState(offerToEdit?.industry || 'Call Center & Customer Service');
@@ -29,6 +27,7 @@ export const OfferModal: React.FC<OfferModalProps> = ({
   );
   const [notes, setNotes] = useState(offerToEdit?.notes || '');
   const [isAvailable, setIsAvailable] = useState(offerToEdit ? offerToEdit.isAvailable : true);
+  const [offerStatus, setOfferStatus] = useState<'Active' | 'Hold'>(offerToEdit?.offerStatus || 'Active');
 
   // Interview Slots
   const [slots, setSlots] = useState<InterviewSlot[]>(
@@ -42,6 +41,43 @@ export const OfferModal: React.FC<OfferModalProps> = ({
 
   const [newSlotDay, setNewSlotDay] = useState('');
   const [newSlotTime, setNewSlotTime] = useState('');
+
+  useEffect(() => {
+    if (offerToEdit) {
+      setCompanyName(offerToEdit.companyName || '');
+      setTitle(offerToEdit.title || '');
+      setIndustry(offerToEdit.industry || 'Call Center & Customer Service');
+      setLocation(offerToEdit.location || 'Nasr City, Cairo');
+      setWorkType(offerToEdit.workType || 'On-site');
+      setSalaryPackage(offerToEdit.salaryPackage || '23,000 EGP Net + KPIs');
+      setWorkingHours(offerToEdit.workingHours || '4:00 PM – 1:00 AM (US Shift) | Mon - Fri');
+      setRequirementsText(
+        offerToEdit.requirements?.join('\n') || 'Advanced English level (C1)\nAt least 6 months of Customer Service / Call Center experience\nKnowledge of MS Office and CRM systems\nSocial & Medical Insurance'
+      );
+      setNotes(offerToEdit.notes || '');
+      setIsAvailable(offerToEdit.isAvailable !== undefined ? offerToEdit.isAvailable : true);
+      setOfferStatus(offerToEdit.offerStatus || 'Active');
+      setSlots(offerToEdit.interviewSlots || []);
+    } else {
+      setCompanyName('');
+      setTitle('');
+      setIndustry('Call Center & Customer Service');
+      setLocation('Nasr City, Cairo');
+      setWorkType('On-site');
+      setSalaryPackage('23,000 EGP Net + KPIs');
+      setWorkingHours('4:00 PM – 1:00 AM (US Shift) | Mon - Fri');
+      setRequirementsText('Advanced English level (C1)\nAt least 6 months of Customer Service / Call Center experience\nKnowledge of MS Office and CRM systems\nSocial & Medical Insurance');
+      setNotes('');
+      setIsAvailable(true);
+      setOfferStatus('Active');
+      setSlots([
+        { id: 'slot-1', day: 'Sunday to Thursday', time: '12:00 PM – 4:00 PM', mode: 'In-Person' },
+        { id: 'slot-2', day: 'Mon & Wed', time: '1:00 PM – 3:30 PM', mode: 'In-Person' },
+      ]);
+    }
+  }, [offerToEdit]);
+
+  if (!isOpen) return null;
 
   const handleAddSlot = () => {
     if (!newSlotDay.trim() || !newSlotTime.trim()) return;
@@ -81,6 +117,7 @@ export const OfferModal: React.FC<OfferModalProps> = ({
       requirements,
       notes: notes.trim(),
       isAvailable,
+      offerStatus,
       interviewSlots: slots,
     });
 
@@ -264,6 +301,40 @@ export const OfferModal: React.FC<OfferModalProps> = ({
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Slot
+              </button>
+            </div>
+          </div>
+
+          {/* Offer Status (Active Green / Hold Red) */}
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+            <div>
+              <span className="font-bold text-slate-800 text-xs block">حالة العرض (Active / Hold)</span>
+              <span className="text-[11px] text-slate-500">Active (أخضر) أو Hold (أحمر)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setOfferStatus('Active')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                  offerStatus === 'Active'
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                <span>Active</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOfferStatus('Hold')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                  offerStatus === 'Hold'
+                    ? 'bg-red-600 text-white shadow-md'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-white"></span>
+                <span>Hold</span>
               </button>
             </div>
           </div>

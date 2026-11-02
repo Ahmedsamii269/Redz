@@ -1,7 +1,8 @@
 import React from 'react';
-import { Trophy, Medal, Award, Crown, Calendar, Users, Building2, TrendingUp } from 'lucide-react';
+import { Trophy, Medal, Award, Crown, Calendar, Users, Building2, TrendingUp, Sparkles, Zap } from 'lucide-react';
 import { CandidateApplication, User } from '../types';
 import { isDateInCurrentMonth } from '../lib/storage';
+import { calculateRecruiterBadges, RecruiterBadge } from '../lib/badges';
 
 interface LeaderboardProps {
   candidates: CandidateApplication[];
@@ -70,6 +71,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ candidates, recruiters
         return {
           id: l.id,
           name: l.fullName,
+          username: l.username,
           count: teamScore + leaderOwnScore,
           avatar: l.fullName.charAt(0),
         };
@@ -110,6 +112,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ candidates, recruiters
         return {
           id: u.id,
           name: u.fullName,
+          username: u.username,
           count: unitScore + umOwnScore,
           avatar: u.fullName.charAt(0),
         };
@@ -126,9 +129,9 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ candidates, recruiters
           <div className="flex items-center gap-3">
             <Trophy className="w-8 h-8 text-amber-500" />
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Performance Leaderboard</h2>
+              <h2 className="text-lg font-bold text-slate-900">Performance Leaderboard & Achievement Badges</h2>
               <p className="text-xs text-slate-500">
-                Live rankings based on <span className="font-bold text-emerald-600">Voice Note Accepted</span> status.
+                Live rankings & earned badges based on <span className="font-bold text-emerald-600">Voice Note Accepted</span> status.
               </p>
             </div>
           </div>
@@ -146,7 +149,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ candidates, recruiters
           <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Medal className="w-5 h-5 text-red-600" />
-              <h3 className="font-bold text-slate-900 text-sm">Top Recruiters</h3>
+              <h3 className="font-bold text-slate-900 text-sm">Top Recruiters & Badges</h3>
             </div>
             <TrendingUp className="w-4 h-4 text-slate-400" />
           </div>
@@ -155,9 +158,24 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ candidates, recruiters
             {recruiterStats.length === 0 ? (
               <div className="p-10 text-center text-slate-400 text-xs italic">No data this month yet.</div>
             ) : (
-              recruiterStats.map((stat, idx) => (
-                <LeaderboardItem key={stat.id} stat={stat} rank={idx + 1} colorClass="bg-amber-500" label="Accepted" />
-              ))
+              recruiterStats.map((stat, idx) => {
+                const badges = calculateRecruiterBadges(
+                  stat.id,
+                  stat.username,
+                  relevantCandidates,
+                  idx + 1
+                );
+                return (
+                  <LeaderboardItem
+                    key={stat.id}
+                    stat={stat}
+                    rank={idx + 1}
+                    colorClass="bg-amber-500"
+                    label="Accepted"
+                    badges={badges}
+                  />
+                );
+              })
             )}
           </div>
         </div>
@@ -208,29 +226,61 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ candidates, recruiters
   );
 };
 
-const LeaderboardItem: React.FC<{ stat: any; rank: number; colorClass: string; label: string }> = ({ stat, rank, colorClass, label }) => {
+const LeaderboardItem: React.FC<{
+  stat: any;
+  rank: number;
+  colorClass: string;
+  label: string;
+  badges?: RecruiterBadge[];
+}> = ({ stat, rank, colorClass, label, badges = [] }) => {
   const isTop3 = rank <= 3;
-  
+
   return (
-    <div className={`p-4 flex items-center justify-between transition-colors hover:bg-slate-50/50 ${rank === 1 ? 'bg-slate-50/30' : ''}`}>
-      <div className="flex items-center gap-4">
-        <div className="relative">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-xs ${
-            isTop3 ? `${colorClass} ring-4 ring-offset-1 ring-slate-100` : 'bg-slate-200 text-slate-500'
-          }`}>
+    <div
+      className={`p-4 flex items-center justify-between transition-colors hover:bg-slate-50/50 ${
+        rank === 1 ? 'bg-amber-50/20' : ''
+      }`}
+    >
+      <div className="flex items-center gap-3.5 min-w-0">
+        <div className="relative shrink-0">
+          <div
+            className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-xs ${
+              isTop3 ? `${colorClass} ring-4 ring-offset-1 ring-slate-100` : 'bg-slate-200 text-slate-500'
+            }`}
+          >
             {stat.avatar}
           </div>
           {rank === 1 && <Crown className="w-4 h-4 text-amber-500 absolute -top-2 -right-1 rotate-12 fill-amber-500" />}
         </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-900 text-sm">{stat.name}</span>
-            {stat.username && <span className="text-[10px] font-mono text-slate-400 hidden sm:inline">@{stat.username}</span>}
+
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-bold text-slate-900 text-sm truncate">{stat.name}</span>
+            {stat.username && (
+              <span className="text-[10px] font-mono text-slate-400 hidden sm:inline">
+                @{stat.username}
+              </span>
+            )}
           </div>
-          <div className="text-[10px] text-slate-500">Rank #{rank}</div>
+
+          {/* Badges display */}
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
+            <span className="text-[10px] text-slate-500 mr-1">Rank #{rank}</span>
+            {badges.map((b) => (
+              <span
+                key={b.id}
+                className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-md border flex items-center gap-0.5 ${b.bgClass} ${b.textClass} ${b.borderClass}`}
+                title={`${b.titleEn} - ${b.descriptionEn}`}
+              >
+                <span>{b.icon}</span>
+                <span className="hidden sm:inline">{b.titleAr.split(' ')[0]}</span>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
-      <div className="text-right">
+
+      <div className="text-right shrink-0 pl-2">
         <div className="text-xl font-black font-mono text-slate-900">{stat.count}</div>
         <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{label}</div>
       </div>

@@ -41,6 +41,7 @@ export interface CompanyOffer {
   requirements: string[]; // e.g. ["خريجين مؤهل عالي فقط", "مستوى إنجليزي C1 / C2", "موقف محدد من التجنيد للذكور"]
   interviewSlots: InterviewSlot[];
   isAvailable: boolean;
+  offerStatus?: 'Active' | 'Hold'; // Admin Active (Green) or Hold (Red)
   notes?: string;
   schedulingRules?: {
     allowedDays: number[]; // 0: Sun, 1: Mon, ..., 6: Sat
@@ -98,9 +99,27 @@ export interface CandidateApplication {
   experienceLevel?: string; // e.g. "Fresh Graduate / No Experience", "1-6 Months", "6-12 Months", "1-2 Years", "2+ Years"
   experienceCategory?: string; // e.g. "Customer Service", "Tele-sales", "Technical Support", "Banking & Finance", "Other"
   experienceDetails?: string; // e.g. Previous companies, accounts, or role description
+  aiEvaluation?: AiVoiceEvaluation;
   statusHistory: StatusHistoryEntry[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AiVoiceEvaluation {
+  level: 'A2' | 'B1' | 'B2' | 'B2+' | 'C1' | 'C2';
+  fluencyScore: number; // 1-10
+  pronunciationScore: number; // 1-10
+  grammarScore: number; // 1-10
+  readinessScore: number; // 1-10
+  summaryAr: string; // Arabic summary for recruiter
+  summaryEn: string; // English summary
+  transcription?: string; // English speech-to-text verbatim
+  isQualified?: boolean;
+  qualificationReasonAr?: string;
+  recommendedAccounts?: string[]; // e.g. ["UK Customer Care", "US Technical Support"]
+  strengths?: string[];
+  improvements?: string[];
+  evaluatedAt: string;
 }
 
 export interface RecruitmentMetrics {

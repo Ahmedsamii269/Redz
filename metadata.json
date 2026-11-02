@@ -1,6 +1,6 @@
 {
-  "name": "RecruitFlow - منصة التوظيف ومتابعة الكانديديت وعروض العمل",
-  "description": "منصة شاملة لإدارة عروض العمل ولينكات الريفير للريكروترز ونماذج تقديم الكانديديت وتحديث الفيدباك والمقابلات في الوقت الفعلي.",
+  "name": "REDZ Recruitment Agency - Hiring, Talent, Careers",
+  "description": "المُنصة الرسمية لشركة REDZ Recruitment Agency لإدارة عروض العمل ولينكات الريفير للريكروترز ونماذج تقديم الكانديديت ومتابعة المقابلات وتكامل تقويم جوجل.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
